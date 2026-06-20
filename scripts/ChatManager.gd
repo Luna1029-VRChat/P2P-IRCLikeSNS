@@ -67,8 +67,14 @@ func _on_wh_state_changed(state: int) -> void:
 		var kinds0: Array = [0]
 		NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
 
-		status_label.text = "参加可能なルームを検出中..."
+		_display_name = _my_pubkey.left(12)
+		_register_presence("init")
+		status_label.text = "ルームを検出中..."
 		listening_hint.visible = false
+
+		await get_tree().create_timer(2.0).timeout
+		if not _has_joined:
+			_auto_join()
 
 
 func _on_nostr_event_received(sub_id: String, ev: Dictionary) -> void:
@@ -104,6 +110,32 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 
 
 
+func _register_presence(role: String) -> void:
+	var content_dict := {
+		name = _display_name,
+		app = APP_TAG,
+		role = role
+	}
+	var tags: Array = [["s", APP_TAG]]
+	NostrGD.SendCustomEvent(0, JSON.new().stringify(content_dict), tags)
+
+
+func _auto_join() -> void:
+	_has_joined = true
+
+	if _host_pubkey.is_empty():
+		_become_host()
+	else:
+		_become_guest()
+
+	join_overlay.visible = false
+	join_area.visible = false
+	show_join_btn.visible = true
+	message_input.editable = true
+	send_btn.disabled = false
+	join_btn.text = "変更"
+
+
 func _on_overlay_close_pressed() -> void:
 	join_overlay.visible = false
 	join_area.visible = false
@@ -117,26 +149,22 @@ func _on_show_join_pressed() -> void:
 
 
 func _on_join_pressed() -> void:
-	_display_name = name_input.text.strip_edges()
-	if _display_name.is_empty():
+	var new_name = name_input.text.strip_edges()
+	if new_name.is_empty():
 		status_label.text = "名前を入力してください"
 		return
 
-	_has_joined = true
-
-	if _host_pubkey.is_empty():
-		_become_host()
+	_display_name = new_name
+	if _has_joined:
+		var role = "host" if _is_host else "guest"
+		_register_presence(role)
+		_add_system_message("名前変更: " + _display_name)
 	else:
-		_become_guest()
+		_auto_join()
 
 	join_overlay.visible = false
 	join_area.visible = false
-	show_join_btn.visible = false
-	message_input.editable = true
-	send_btn.disabled = false
-	listening_hint.visible = false
-
-	join_btn.disabled = false
+	show_join_btn.visible = true
 
 
 func _become_host() -> void:
