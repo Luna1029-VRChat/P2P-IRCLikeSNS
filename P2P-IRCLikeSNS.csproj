@@ -1,0 +1,16 @@
+<Project Sdk="Godot.NET.Sdk/4.6.3">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>P2PIRCLikeSNS</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+    <PackageReference Include="NBitcoin" Version="10.0.6" />
+    <PackageReference Include="NBitcoin.Secp256k1" Version="4.0.0" />
+    <PackageReference Include="Nostr.Client" Version="2.1.0" />
+    <PackageReference Include="Nostr.Sdk" Version="0.44.2" />
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+  </ItemGroup>
+</Project>

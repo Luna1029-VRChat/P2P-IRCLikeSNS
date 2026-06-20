@@ -1,8 +1,24 @@
 
-# Godot-specific ignores
-.import/
-export.cfg
-export_presets.cfg
+# Godot 4+ specific ignores
+.godot/
+/android/
 
-# Mono-specific ignores
-.mono/
+# Auto-generated UID files
+*.uid
+
+# Keystores (sensitive signing keys)
+*.keystore
+
+# Linux native build
+/build/
+
+# Web export (regenerate with Godot)
+/docs/
+
+# GDExtension build artifacts
+addons/nostr_godot/gdextension/build/
+addons/nostr_godot/gdextension/extension_api.json
+addons/nostr_godot/gdextension/gdextension_interface.h
+
+# libsecp256k1 (fetch separately for rebuilding)
+addons/nostr_godot/gdextension/libsecp256k1/
