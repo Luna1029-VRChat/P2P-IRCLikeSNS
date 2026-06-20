@@ -12,9 +12,6 @@
 # Linux native build
 /build/
 
-# Web export (regenerate with Godot)
-/docs/
-
 # GDExtension build artifacts
 addons/nostr_godot/gdextension/build/
 addons/nostr_godot/gdextension/extension_api.json
