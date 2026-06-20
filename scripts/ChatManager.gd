@@ -75,6 +75,10 @@ func _on_wh_state_changed(state: int) -> void:
 		await get_tree().create_timer(3.0).timeout
 		if not _has_joined:
 			_auto_join()
+		_update_join_status()
+	else:
+		# Update status for WebRTC state changes (CALLING, CONNECTED, etc.)
+		_update_join_status()
 
 
 func _on_nostr_event_received(sub_id: String, ev: Dictionary) -> void:
@@ -107,6 +111,7 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 		_host_pubkey = pubkey
 		_add_system_message("ホスト検出: " + name + " (" + pubkey.left(12) + ")")
 		_update_status_bar()
+		_update_join_status()
 
 
 
@@ -128,12 +133,11 @@ func _auto_join() -> void:
 	else:
 		_become_guest()
 
-	join_overlay.visible = false
-	join_area.visible = false
 	show_join_btn.visible = true
 	message_input.editable = true
 	send_btn.disabled = false
 	join_btn.text = "変更"
+	_update_join_status()
 
 
 func _on_overlay_close_pressed() -> void:
@@ -162,9 +166,7 @@ func _on_join_pressed() -> void:
 	else:
 		_auto_join()
 
-	join_overlay.visible = false
-	join_area.visible = false
-	show_join_btn.visible = true
+	_update_join_status()
 
 
 func _become_host() -> void:
@@ -185,6 +187,7 @@ func _become_host() -> void:
 
 	_add_system_message("あなたがホストになりました")
 	_update_status_bar()
+	_update_join_status()
 
 
 func _become_guest() -> void:
@@ -202,6 +205,7 @@ func _become_guest() -> void:
 	_wh.join_host(_host_pubkey)
 	_add_system_message("ホストに参加リクエストを送信しました")
 	_update_status_bar()
+	_update_join_status()
 
 
 func _on_data_channel_opened(_dc, peer_pubkey: String) -> void:
@@ -210,6 +214,7 @@ func _on_data_channel_opened(_dc, peer_pubkey: String) -> void:
 		_join_order.append(peer_pubkey)
 	_add_system_message("P2P接続: " + peer_pubkey.left(12))
 	_update_status_bar()
+	_update_join_status()
 
 
 func _on_data_channel_closed(peer_pubkey: String) -> void:
@@ -221,6 +226,7 @@ func _on_data_channel_closed(peer_pubkey: String) -> void:
 		_handle_host_disconnected()
 
 	_update_status_bar()
+	_update_join_status()
 
 
 func _handle_host_disconnected() -> void:
@@ -364,6 +370,25 @@ func _scroll_to_bottom() -> void:
 
 func _deferred_scroll_to_bottom() -> void:
 	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
+
+
+func _update_join_status() -> void:
+	var peer_count = _wh.get_connected_peers().size()
+	if not _subscribed:
+		status_label.text = "リレー接続中..."
+	elif not _has_joined:
+		if _host_pubkey.is_empty():
+			status_label.text = "ルームを検出中... (誰もいません)"
+		else:
+			status_label.text = "ホスト検出: " + _host_pubkey.left(12) + " - 接続中..."
+	else:
+		if peer_count > 0:
+			status_label.text = "P2P接続済み (" + str(peer_count) + "人)"
+		else:
+			if _is_host:
+				status_label.text = "ホストとして待機中..."
+			else:
+				status_label.text = "ホストに接続中..."
 
 
 func _update_status_bar() -> void:
