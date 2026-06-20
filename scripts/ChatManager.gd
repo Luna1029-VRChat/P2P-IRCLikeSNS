@@ -3,7 +3,6 @@ extends Control
 const RELAY_URL := "wss://p2p-nostr.yoinekodo.jp"
 const APP_TAG := "p2p-irc"
 const DISCOVER_SUB_ID := "sess_discover"
-const CHAT_SUB_ID := "chat_eavesdrop"
 const SUBSCRIBED_STATE := 2
 
 var _wh: Node
@@ -68,23 +67,16 @@ func _on_wh_state_changed(state: int) -> void:
 		var kinds0: Array = [0]
 		NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
 
-		var kinds21000: Array = [21000]
-		NostrGD.RequestEventsWithTag(CHAT_SUB_ID, kinds21000, "s", APP_TAG)
-
-		status_label.text = "会話を傍受中... 名前を入力して参加"
-		listening_hint.visible = true
-		_add_system_message("--- 傍受モード ---")
+		status_label.text = "参加可能なルームを検出中..."
+		listening_hint.visible = false
 
 
 func _on_nostr_event_received(sub_id: String, ev: Dictionary) -> void:
 	var kind = ev.get("kind", 0)
-	var pubkey = str(ev.get("pubkey", ""))
 
 	if sub_id == DISCOVER_SUB_ID and kind == 0:
 		_discover_events.append(ev.duplicate())
 		_process_discover_event(ev, false)
-	elif sub_id == CHAT_SUB_ID and kind == 21000:
-		_process_chat_event(ev)
 
 
 func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
@@ -110,27 +102,6 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 		_add_system_message("ホスト検出: " + name + " (" + pubkey.left(12) + ")")
 		_update_status_bar()
 
-
-func _process_chat_event(ev: Dictionary) -> void:
-	var content = str(ev.get("content", ""))
-	var pubkey = str(ev.get("pubkey", ""))
-
-	if pubkey == _my_pubkey:
-		return
-
-	var j = JSON.new()
-	if j.parse(content) != OK:
-		return
-	var msg = j.get_data()
-	if not msg is Dictionary:
-		return
-
-	var msg_type = str(msg.get("type", ""))
-	if msg_type == "chat":
-		var name = str(msg.get("name", pubkey.left(12)))
-		var text = str(msg.get("content", ""))
-		var ts = int(msg.get("timestamp", 0))
-		_add_chat_message(name, text, pubkey, ts)
 
 
 func _on_overlay_close_pressed() -> void:
@@ -307,9 +278,6 @@ func _on_send_pressed() -> void:
 	}
 	var json_str := JSON.new().stringify(msg)
 
-	var tags: Array = [["s", APP_TAG]]
-	NostrGD.SendCustomEvent(21000, json_str, tags)
-
 	_wh.send_string(json_str)
 
 	_add_chat_message(_display_name, text, _my_pubkey, Time.get_unix_time_from_system())
@@ -380,7 +348,7 @@ func _update_status_bar() -> void:
 	elif _has_joined:
 		role_text = "ゲスト"
 	else:
-		role_text = "傍受中"
+		role_text = "未参加"
 	var peer_count = _wh.get_connected_peers().size()
 	status_label2.text = role_text + " | 接続: " + str(peer_count)
 	host_label.text = "" if _host_pubkey.is_empty() else "host: " + _host_pubkey.left(12)
