@@ -21,3 +21,4 @@ addons/nostr_godot/gdextension/gdextension_interface.h
 addons/nostr_godot/gdextension/libsecp256k1/
 
 fonts/
+icons/
