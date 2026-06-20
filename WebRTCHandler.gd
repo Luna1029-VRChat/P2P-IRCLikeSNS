@@ -315,6 +315,10 @@ func _on_event_received(sub_id: String, event: Dictionary):
 			var ps = peers.get(from)
 			if not ps or not ps.pc:
 				return
+			var candidate = str(msg.get("candidate", ""))
+			if _is_ipv4_candidate(candidate):
+				hud_log("Filtered received IPv4 candidate")
+				return
 			ps.ice_rcvd += 1
 			ps.pending_ice.append(msg.duplicate())
 			_flush_pending_ice(ps)
@@ -326,7 +330,7 @@ func _start_webrtc(ps: PeerSession, initiator: bool) -> bool:
 	ps.pc.ice_candidate_created.connect(func(mid, index, cand): _on_ice_candidate(ps, mid, index, cand))
 	var result = ps.pc.initialize({
 		"ice_servers": [{
-			"urls": ["stun:stun.l.google.com:19302"]
+			"urls": ["stun:stun.ipv6.google.com:19302"]
 		}]
 	})
 	if result != OK:
@@ -347,7 +351,10 @@ func _flush_pending_ice(ps: PeerSession):
 	if ps.pc == null:
 		return
 	for msg in ps.pending_ice:
-		ps.pc.add_ice_candidate(msg.get("mid", ""), msg.get("mlineIndex", 0), msg.get("candidate", ""))
+		var candidate = str(msg.get("candidate", ""))
+		if _is_ipv4_candidate(candidate):
+			continue
+		ps.pc.add_ice_candidate(msg.get("mid", ""), msg.get("mlineIndex", 0), candidate)
 	ps.pending_ice.clear()
 
 func _on_sdp_created(ps: PeerSession, p_type: String, p_sdp: String):
@@ -356,10 +363,22 @@ func _on_sdp_created(ps: PeerSession, p_type: String, p_sdp: String):
 	var msg = {"type": p_type, "sdp": p_sdp}
 	_send_signal(msg, ps.pubkey)
 
-func _on_ice_candidate(ps: PeerSession, mid: String, index: int, candidate: String):
+func _on_ice_candidate(ps: PeerSession, mid: String, index: int, candidate: String) -> void:
 	ps.ice_sent += 1
+	if _is_ipv4_candidate(candidate):
+		hud_log("Filtered IPv4 candidate: " + candidate.left(50))
+		return
 	var msg = {"type": "ice", "candidate": candidate, "mid": mid, "mlineIndex": index}
 	_send_signal(msg, ps.pubkey)
+
+
+func _is_ipv4_candidate(candidate: String) -> bool:
+	# ICE candidate format: "candidate:<foundation> <component> <protocol> <priority> <address> <port> typ <type> ..."
+	# IPv4 address pattern: 4 octets separated by dots
+	# Match typical IPv4 in candidate string (e.g., "192.168.1.1" or "10.0.0.1")
+	var regex := RegEx.new()
+	regex.compile("\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b")
+	return regex.search(candidate) != null
 
 func _on_dc_received(ps: PeerSession, channel: WebRTCDataChannel):
 	ps.dc = channel
