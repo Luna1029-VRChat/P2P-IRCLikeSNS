@@ -3,6 +3,27 @@ extends Control
 const Secp256k1 = preload("res://addons/nostr_godot/secp256k1.gd")
 const NostrUtils = preload("res://scripts/nostr_utils.gd")
 
+var _icons: Dictionary = {}
+
+func _get_icon(name: String, size: int = 14) -> Texture2D:
+	var key := name + "_" + str(size)
+	if _icons.has(key):
+		return _icons[key]
+	var path := "res://icons/" + name + ".svg"
+	if not ResourceLoader.exists(path):
+		return null
+	var svg := load(path) as Texture2D
+	if not svg:
+		return null
+	var img := svg.get_image()
+	if not img:
+		return null
+	if img.get_width() != size or img.get_height() != size:
+		img.resize(size, size, Image.INTERPOLATE_LANCZOS)
+	var tex := ImageTexture.create_from_image(img)
+	_icons[key] = tex
+	return tex
+
 @onready var private_key_input: TextEdit = $Sidebar/SidebarInner/AccountSection/VBoxContainer/LoginContainer/PrivateKeyInput
 @onready var status_label: Label = $Sidebar/SidebarInner/StatusSection/StatusLabel
 @onready var message_input: LineEdit = $MainPanel/InputBar/HBoxContainer/MessageInput
@@ -11,7 +32,6 @@ const NostrUtils = preload("res://scripts/nostr_utils.gd")
 @onready var register_display_input: LineEdit = $Sidebar/SidebarInner/AccountSection/VBoxContainer/CreateContainer/RegisterDisplayInput
 @onready var register_picture_input: LineEdit = $Sidebar/SidebarInner/AccountSection/VBoxContainer/CreateContainer/RegisterPictureInput
 @onready var register_banner_input: LineEdit = $Sidebar/SidebarInner/AccountSection/VBoxContainer/CreateContainer/RegisterBannerInput
-@onready var register_lud16_input: LineEdit = $Sidebar/SidebarInner/AccountSection/VBoxContainer/CreateContainer/RegisterLud16Input
 @onready var auth_choice_hbox: HBoxContainer = $Sidebar/SidebarInner/AccountSection/VBoxContainer/AuthChoiceHBox
 @onready var login_container: VBoxContainer = $Sidebar/SidebarInner/AccountSection/VBoxContainer/LoginContainer
 @onready var create_container: VBoxContainer = $Sidebar/SidebarInner/AccountSection/VBoxContainer/CreateContainer
@@ -28,7 +48,8 @@ const NostrUtils = preload("res://scripts/nostr_utils.gd")
 	$Sidebar/SidebarInner/NavSection/NavMenu/NavNotifications,
 	$Sidebar/SidebarInner/NavSection/NavMenu/NavDM,
 	$Sidebar/SidebarInner/NavSection/NavMenu/NavProfile,
-	$Sidebar/SidebarInner/NavSection/NavMenu/NavSettings
+	$Sidebar/SidebarInner/NavSection/NavMenu/NavSettings,
+	$Sidebar/SidebarInner/NavSection/NavMenu/NavBookmarks
 ]
 
 enum Section { TIMELINE, NOTIFICATIONS, DM, PROFILE, SETTINGS, BOOKMARKS }
@@ -42,9 +63,10 @@ var profile_cache: Dictionary = {}
 var pending_labels: Dictionary = {}
 var pubkey_request_pool: Array[String] = []
 var pool_timer: Timer
+var _profile_request_active: bool = false
+var _profile_request_time: int = 0
 var _timeline_update_timer: Timer
 var _notif_refresh_timer: Timer
-var _profile_request_active: bool = false
 var _pending_sorted_timeline: Array = []
 var _pending_profile_events: Array[Dictionary] = []
 var _relays_timeline_subscribed: Dictionary = {}
@@ -60,26 +82,18 @@ var _is_profile_edit: bool = false
 
 var _stamp_event_id: String = ""
 var _stamp_pubkey: String = ""
-var _zap_event_id: String = ""
-var _zap_pubkey: String = ""
-var _zap_buttons_by_pubkey: Dictionary = {}
+var _nav_button_icons: Array = []
+var _like_button_cache: Dictionary = {}
 var _liked_events: Dictionary = {}
-var _zap_amount_input: LineEdit
-var _zap_msg_input: LineEdit
-var _zap_in_progress: bool = false
 var _avatar_texture_cache: Dictionary = {}
 var _image_texture_cache: Dictionary = {}
 var _pending_embeds: Dictionary = {}
 var _pending_notif_embeds: Dictionary = {}
-var _invoice_label: Label
-var _invoice_qr_rect: TextureRect
 var _notifications_events: Array = []
 var _dm_conversations: Dictionary = {}
 var _reply_context: Dictionary = {}
 var _reaction_counts: Dictionary = {}
 var _stamp_counts: Dictionary = {}
-var _zap_counts: Dictionary = {}
-var _zap_amounts: Dictionary = {}
 var _timeline_count_labels: Dictionary = {}
 var _timeline_panels: Dictionary = {}
 var _file_dialog: FileDialog
@@ -96,10 +110,13 @@ var _bookmark_content_sub_id: String = ""
 var _bookmark_loaded_event_ids: Dictionary = {}
 var _sidebar_visible: bool = true
 var _is_mobile: bool = false
+var _bottom_nav: PanelContainer = null
+var _bottom_nav_buttons: Array[Button] = []
 var _relays_notif_subscribed: Dictionary = {}
 var _relays_dm_subscribed: Dictionary = {}
 const SIDEBAR_WIDTH: int = 280
 const DESKTOP_BREAKPOINT: int = 800
+const BOTTOM_NAV_HEIGHT: int = 56
 const BTN_MQ: int = 38
 const BTN_MQ_TALL: int = 44
 var _touch_start_x: float = -1.0
@@ -124,19 +141,37 @@ static func _relay_can_write(entry: String) -> bool:
 func _ready() -> void:
 	_apply_theme()
 	_setup_stamp_popup()
-	_setup_zap_popup()
-	_setup_invoice_popup()
 	_setup_responsive_layout()
+	if _is_mobile:
+		_setup_mobile_bottom_nav()
 
 	$MainPanel/ScrollContainer.clip_contents = true
 	$MainPanel/ScrollContainer/Timeline.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var img_btn = Button.new()
-	img_btn.text = "🖼️"
+	img_btn.icon = _get_icon("image")
+	img_btn.text = ""
 	img_btn.custom_minimum_size = _btn_size(28, 24)
 	img_btn.pressed.connect(_on_image_upload_button)
 	$MainPanel/InputBar/HBoxContainer.add_child(img_btn)
 	$MainPanel/InputBar/HBoxContainer.move_child(img_btn, 0)
+
+	_nav_button_icons = [
+		_get_icon("house", 16),
+		_get_icon("bell", 16),
+		_get_icon("message-square", 16),
+		_get_icon("user", 16),
+		_get_icon("settings", 16),
+		_get_icon("bookmark", 16),
+	]
+	for i in nav_buttons.size():
+		if i < _nav_button_icons.size() and _nav_button_icons[i]:
+			nav_buttons[i].icon = _nav_button_icons[i]
+		nav_buttons[i].add_theme_color_override("icon_normal_color", Color.WHITE)
+		nav_buttons[i].add_theme_color_override("icon_hover_color", Color.WHITE)
+		nav_buttons[i].add_theme_color_override("icon_pressed_color", Color.WHITE)
+		nav_buttons[i].add_theme_color_override("icon_focus_color", Color.WHITE)
+		nav_buttons[i].add_theme_color_override("icon_disabled_color", Color.WHITE)
 
 	_reply_context_label = Label.new()
 	_reply_context_label.add_theme_color_override("font_color", Color(0.5, 0.7, 1))
@@ -170,9 +205,7 @@ func _ready() -> void:
 	NostrGD.ExtensionAuthCompleted.connect(_on_extension_auth_completed)
 	NostrGD.TimelineUpdated.connect(_on_nostr_timeline_updated)
 	NostrGD.ReactionReceived.connect(_on_nostr_reaction_received)
-	NostrGD.ZapReceiptReceived.connect(_on_nostr_zap_receipt_received)
 	NostrGD.DirectMessageReceived.connect(_on_nostr_direct_message_received)
-	NostrGD.NwcResponseReceived.connect(_on_nostr_nwc_response)
 
 	pool_timer = Timer.new()
 	pool_timer.wait_time = 1.0
@@ -197,6 +230,17 @@ func _ready() -> void:
 	if saved_relays.size() > 0:
 		for url in saved_relays:
 			RELAY_URL.append(url)
+	else:
+		var default_relays = [
+			"wss://relay-jp.nostr.wirednet.jp/",
+			"wss://nrelay-jp.nostr.wirednet.jp/",
+			"wss://yabu.me/",
+			"wss://nos.lol/",
+			"wss://relay.nostr.band/",
+		]
+		for url in default_relays:
+			RELAY_URL.append(url)
+		NostrGD.SaveRelayUrls(default_relays)
 
 	var saved_key = _load_private_key()
 	if not saved_key.is_empty():
@@ -215,21 +259,13 @@ func _ready() -> void:
 	_build_sections()
 	_switch_section(Section.TIMELINE)
 	_load_bookmarks()
+	if NostrGD.IsLoggedIn:
+		_update_settings_nsec_field()
+		_refresh_profile()
 
 	_connect_relays()
 
-const NotoSansJP := preload("res://fonts/NotoSansJP.ttf")
-
 func _apply_theme() -> void:
-	var system_font := SystemFont.new()
-	system_font.font_names = [
-		"Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
-		"Yu Gothic", "Yu Gothic UI", "Meiryo",
-		"MS PGothic", "sans-serif"
-	]
-	if NotoSansJP is Font:
-		system_font.fallbacks = [NotoSansJP]
-	ThemeDB.fallback_font = system_font
 	var window_bg = StyleBoxFlat.new()
 	window_bg.bg_color = Color(0.09, 0.1, 0.12)
 
@@ -334,9 +370,6 @@ func _on_nostr_connected(url: String) -> void:
 	if not pool_timer.is_processing():
 		pool_timer.start()
 
-	if url == NostrGD._nwc_relay_url:
-		return
-
 	if _relays_timeline_subscribed.size() < MAX_TIMELINE_RELAYS and not _relays_timeline_subscribed.has(url):
 		for entry in RELAY_URL:
 			if _relay_url(entry) == url and _relay_can_read(entry):
@@ -403,8 +436,64 @@ func _setup_responsive_layout() -> void:
 	)
 	get_tree().root.size_changed.connect(_on_viewport_resized)
 
+func _setup_mobile_bottom_nav() -> void:
+	if _bottom_nav != null:
+		_bottom_nav.queue_free()
+		_bottom_nav_buttons.clear()
+	_bottom_nav = PanelContainer.new()
+	_bottom_nav.name = "BottomNav"
+	_bottom_nav.anchor_right = 1.0
+	_bottom_nav.anchor_bottom = 1.0
+	_bottom_nav.offset_top = -BOTTOM_NAV_HEIGHT
+	_bottom_nav.offset_bottom = 0
+	_bottom_nav.mouse_filter = Control.MOUSE_FILTER_STOP
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.11, 0.12, 0.14)
+	bg.corner_radius_top_left = 8
+	bg.corner_radius_top_right = 8
+	_bottom_nav.add_theme_stylebox_override("panel", bg)
+	var hbox := HBoxContainer.new()
+	hbox.anchor_right = 1.0
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	_bottom_nav.add_child(hbox)
+	var icon_names := ["house", "bell", "message-square", "user", "bookmark", "settings"]
+	for i in icon_names.size():
+		var btn := Button.new()
+		btn.flat = true
+		btn.icon = _get_icon(icon_names[i], 20)
+		btn.tooltip_text = ["タイムライン", "通知", "DM", "プロフィール", "ブックマーク", "設定"][i]
+		btn.custom_minimum_size = Vector2(0, BOTTOM_NAV_HEIGHT)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		var section_index = [Section.TIMELINE, Section.NOTIFICATIONS, Section.DM, Section.PROFILE, Section.BOOKMARKS, Section.SETTINGS][i]
+		btn.pressed.connect(_on_bottom_nav_pressed.bind(section_index))
+		hbox.add_child(btn)
+		_bottom_nav_buttons.append(btn)
+	_update_bottom_nav_highlight()
+	add_child(_bottom_nav)
+
+func _update_bottom_nav_highlight() -> void:
+	if _bottom_nav_buttons.is_empty():
+		return
+	for i in _bottom_nav_buttons.size():
+		var btn = _bottom_nav_buttons[i]
+		var section_map := [Section.TIMELINE, Section.NOTIFICATIONS, Section.DM, Section.PROFILE, Section.BOOKMARKS, Section.SETTINGS]
+		var idx = section_map.find(_current_section)
+		if i == idx:
+			btn.add_theme_color_override("icon_normal_color", Color(0.4, 0.7, 1.0))
+		else:
+			btn.add_theme_color_override("icon_normal_color", Color(0.5, 0.5, 0.6))
+
+func _on_bottom_nav_pressed(section: int) -> void:
+	if _is_mobile and _sidebar_visible:
+		_sidebar_visible = false
+		_update_sidebar_state()
+	_switch_section(section)
+
 func _on_viewport_resized() -> void:
 	var vp_w = get_viewport().size.x
+	var was_mobile = _is_mobile
 	_is_mobile = vp_w < DESKTOP_BREAKPOINT
 	if _is_mobile and _sidebar_visible:
 		_sidebar_visible = false
@@ -412,6 +501,16 @@ func _on_viewport_resized() -> void:
 	elif not _is_mobile and not _sidebar_visible:
 		_sidebar_visible = true
 		_update_sidebar_state()
+	if _is_mobile and not was_mobile:
+		_setup_mobile_bottom_nav()
+		if _ui_state == UIState.LOGGED_IN:
+			$MainPanel/InputBar.visible = (_current_section == Section.TIMELINE)
+	elif not _is_mobile and was_mobile:
+		if _bottom_nav != null:
+			_bottom_nav.queue_free()
+			_bottom_nav = null
+			_bottom_nav_buttons.clear()
+		$MainPanel/InputBar.visible = (_ui_state == UIState.LOGGED_IN and _current_section == Section.TIMELINE)
 
 func _on_hamburger_pressed() -> void:
 	_sidebar_visible = not _sidebar_visible
@@ -431,7 +530,15 @@ func _update_sidebar_state() -> void:
 		sidebar.offset_left = 0
 		sidebar.offset_right = SIDEBAR_WIDTH
 		main_panel.offset_left = 0
+		main_panel.offset_bottom = 0
+		if _bottom_nav != null:
+			_bottom_nav.visible = true
+			_bottom_nav.offset_left = 0
+			_bottom_nav.offset_right = 0
 	else:
+		if _bottom_nav != null:
+			_bottom_nav.visible = false
+		main_panel.offset_bottom = 0
 		if _sidebar_visible:
 			sidebar.offset_left = 0
 			sidebar.offset_right = SIDEBAR_WIDTH
@@ -447,7 +554,10 @@ func _set_ui_state(state: int) -> void:
 	login_container.visible = (state == UIState.LOGIN_FORM)
 	create_container.visible = (state == UIState.CREATE_FORM)
 	logged_in_container.visible = (state == UIState.LOGGED_IN)
-	$MainPanel/InputBar.visible = (state == UIState.LOGGED_IN)
+	if _is_mobile:
+		$MainPanel/InputBar.visible = (state == UIState.LOGGED_IN and _current_section == Section.TIMELINE)
+	else:
+		$MainPanel/InputBar.visible = (state == UIState.LOGGED_IN)
 	$Sidebar/SidebarInner/AccountSection/VBoxContainer/ExtensionLogin.visible = (state != UIState.LOGGED_IN)
 
 	if state == UIState.LOGGED_IN:
@@ -645,11 +755,6 @@ func _build_profile_section() -> void:
 	pl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(pl)
 
-	var ll = Label.new()
-	ll.name = "ProfileLud"
-	ll.add_theme_color_override("font_color", Color(0.5, 0.7, 1))
-	vbox.add_child(ll)
-
 	var eb = Button.new()
 	eb.text = "プロフィールを編集"
 	eb.pressed.connect(_on_profile_edit)
@@ -687,7 +792,7 @@ func _build_settings_section() -> void:
 	margin.add_child(vbox)
 
 	var relay_title = Label.new()
-	relay_title.text = "🔄 接続リレー"
+	relay_title.text = "接続リレー"
 	relay_title.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(relay_title)
 
@@ -712,57 +817,8 @@ func _build_settings_section() -> void:
 	relay_save_btn.pressed.connect(_on_save_relays)
 	vbox.add_child(relay_save_btn)
 
-	vbox.add_child(HSeparator.new())
-
-	var nwc_title = Label.new()
-	nwc_title.text = "⚡ ウォレット (NWC)"
-	nwc_title.add_theme_font_size_override("font_size", 16)
-	vbox.add_child(nwc_title)
-
-	var nwc_input = LineEdit.new()
-	nwc_input.name = "NwcInput"
-	nwc_input.placeholder_text = "nostr+walletconnect://..."
-	nwc_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	nwc_input.custom_minimum_size = Vector2(0, 32)
-	if NostrGD.IsNwcConfigured:
-		nwc_input.text = NostrGD.LoadNwcConnectionString()
-	vbox.add_child(nwc_input)
-
-	var nwc_hbox = HBoxContainer.new()
-	nwc_hbox.add_theme_constant_override("separation", 6)
-	vbox.add_child(nwc_hbox)
-
-	var nwc_save_btn = Button.new()
-	nwc_save_btn.text = "保存"
-	nwc_save_btn.custom_minimum_size = Vector2(80, 44) if _is_mobile else Vector2(80, 32)
-	nwc_save_btn.pressed.connect(func():
-		var val = nwc_input.text.strip_edges()
-		if val == "":
-			NostrGD.ClearNwcConnectionString()
-			status_label.text = "NWC 設定をクリアしました"
-		else:
-			NostrGD.SaveNwcConnectionString(val)
-			if NostrGD.InitNWC(val):
-				status_label.text = "NWC 接続文字列を保存・初期化しました"
-			else:
-				status_label.text = "NWC 接続文字列のパースに失敗しました"
-	)
-	nwc_hbox.add_child(nwc_save_btn)
-
-	var nwc_status = Label.new()
-	nwc_status.name = "NwcStatus"
-	if NostrGD.IsNwcConfigured:
-		nwc_status.text = "✅ NWC 設定済み"
-		nwc_status.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
-	else:
-		nwc_status.text = "未設定"
-		nwc_status.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	nwc_hbox.add_child(nwc_status)
-
-	vbox.add_child(HSeparator.new())
-
 	var nsec_title = Label.new()
-	nsec_title.text = "🔑 秘密鍵 (nsec)"
+	nsec_title.text = "秘密鍵 (nsec)"
 	nsec_title.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(nsec_title)
 
@@ -805,7 +861,7 @@ func _build_settings_section() -> void:
 	vbox.add_child(HSeparator.new())
 
 	var filter_title = Label.new()
-	filter_title.text = "📝 表示フィルター"
+	filter_title.text = "表示フィルター"
 	filter_title.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(filter_title)
 
@@ -837,7 +893,8 @@ func _build_settings_section() -> void:
 	vbox.add_child(HSeparator.new())
 
 	var disconnect_btn = Button.new()
-	disconnect_btn.text = "🔌 切断してログアウト"
+	disconnect_btn.text = "切断してログアウト"
+	disconnect_btn.icon = _get_icon("plug", 14)
 	disconnect_btn.pressed.connect(_on_disconnect_button_pressed)
 	vbox.add_child(disconnect_btn)
 
@@ -871,7 +928,6 @@ func _on_save_relays() -> void:
 	for child in timeline.get_children():
 		child.queue_free()
 	pending_labels.clear()
-	_zap_buttons_by_pubkey.clear()
 	_pending_embeds.clear()
 	_notifications_events.clear()
 	_last_notif_ids = {}
@@ -914,19 +970,20 @@ func _switch_section(section: int) -> void:
 	$MainPanel/BookmarksPanel.hide()
 
 	var names = {
-		Section.TIMELINE: "🌐  タイムライン",
-		Section.NOTIFICATIONS: "🔔  通知",
-		Section.DM: "💬  DM",
-		Section.PROFILE: "👤  プロフィール",
-		Section.SETTINGS: "⚙️  設定",
-		Section.BOOKMARKS: "🔖  ブックマーク"
+		Section.TIMELINE: "タイムライン",
+		Section.NOTIFICATIONS: "通知",
+		Section.DM: "DM",
+		Section.PROFILE: "プロフィール",
+		Section.SETTINGS: "設定",
+		Section.BOOKMARKS: "ブックマーク"
 	}
 	section_header.text = names.get(section, "セクション")
 
 	match section:
 		Section.TIMELINE:
 			$MainPanel/ScrollContainer.show()
-			$MainPanel/InputBar.visible = (_ui_state == UIState.LOGGED_IN)
+			if not _is_mobile:
+				$MainPanel/InputBar.visible = (_ui_state == UIState.LOGGED_IN)
 		Section.NOTIFICATIONS:
 			$MainPanel/NotificationsPanel.show()
 			$MainPanel/InputBar.hide()
@@ -948,6 +1005,13 @@ func _switch_section(section: int) -> void:
 			_refresh_bookmarks()
 
 	_update_nav_highlight()
+	_update_bottom_nav_highlight()
+
+	if _is_mobile:
+		if section == Section.TIMELINE and _ui_state == UIState.LOGGED_IN:
+			$MainPanel/InputBar.visible = true
+		else:
+			$MainPanel/InputBar.visible = false
 
 func _refresh_profile() -> void:
 	var panel = $MainPanel/ProfilePanel
@@ -1014,10 +1078,6 @@ func _refresh_profile() -> void:
 		pl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		pl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		vbox.add_child(pl)
-		var ll = Label.new()
-		ll.name = "ProfileLud"
-		ll.add_theme_color_override("font_color", Color(0.5, 0.7, 1))
-		vbox.add_child(ll)
 		var eb = Button.new()
 		eb.text = "プロフィールを編集"
 		eb.pressed.connect(_on_profile_edit)
@@ -1033,7 +1093,6 @@ func _refresh_profile() -> void:
 	var name_vbox = panel.get_node("ProfileScroll/ProfileMargin/ProfileVBox/ProfileHeader/ProfileNameSection")
 	var about_label = name_vbox.get_node("ProfileAbout")
 	var pubkey_label = panel.get_node("ProfileScroll/ProfileMargin/ProfileVBox/ProfilePubkey")
-	var lud_label = panel.get_node("ProfileScroll/ProfileMargin/ProfileVBox/ProfileLud")
 	var avatar_rect = panel.get_node("ProfileScroll/ProfileMargin/ProfileVBox/ProfileHeader/ProfileAvatar")
 	var banner_rect = panel.get_node_or_null("ProfileBanner")
 
@@ -1047,12 +1106,13 @@ func _refresh_profile() -> void:
 		pubkey_label.text = "Pubkey: " + pubkey
 		if not pubkey_request_pool.has(pubkey):
 			pubkey_request_pool.append(pubkey)
+		if not pool_timer.is_processing():
+			pool_timer.start()
 		return
 
 	name_label.text = profile.get("display_name", profile.get("name", "Unknown"))
 	about_label.text = profile.get("about", "")
 	pubkey_label.text = "Pubkey: " + pubkey
-	lud_label.text = "⚡ " + profile.get("lud16", "") if profile.get("lud16", "") != "" else ""
 
 	var avatar_url = profile.get("picture", "")
 	if avatar_url != "":
@@ -1076,7 +1136,6 @@ func _on_profile_edit() -> void:
 		name_val = name_val.substr(1)
 	var display_val = profile.get("display_name", "")
 	var about_val = profile.get("about", "")
-	var lud_val = profile.get("lud16", "")
 
 	var name_inp = LineEdit.new()
 	name_inp.name = "EditName"
@@ -1108,12 +1167,6 @@ func _on_profile_edit() -> void:
 	banner_inp.text = profile.get("banner", "")
 	vbox.add_child(banner_inp)
 
-	var lud_inp = LineEdit.new()
-	lud_inp.name = "EditLud"
-	lud_inp.placeholder_text = "ウォレットアドレス (lud16)"
-	lud_inp.text = lud_val
-	vbox.add_child(lud_inp)
-
 	var btn_hbox = HBoxContainer.new()
 	btn_hbox.name = "EditButtons"
 	btn_hbox.add_theme_constant_override("separation", 8)
@@ -1138,7 +1191,6 @@ func _save_profile_from_tab() -> void:
 	var about_inp = vbox.get_node("EditAbout") as LineEdit
 	var picture_inp = vbox.get_node("EditPicture") as LineEdit
 	var banner_inp = vbox.get_node("EditBanner") as LineEdit
-	var lud_inp = vbox.get_node("EditLud") as LineEdit
 	if name_inp == null or display_inp == null:
 		return
 	var user_name = name_inp.text.strip_edges()
@@ -1152,16 +1204,14 @@ func _save_profile_from_tab() -> void:
 	NostrGD.SendProfileMetaData(
 		user_name, display_name, about_inp.text.strip_edges(),
 		picture_inp.text.strip_edges(),
-		banner_inp.text.strip_edges(),
-		lud_inp.text.strip_edges()
+		banner_inp.text.strip_edges()
 	)
 	profile_cache[NostrGD.GetPublicKeyHex()] = {
 		"name": user_name,
 		"display_name": display_name,
 		"about": about_inp.text.strip_edges(),
 		"picture": picture_inp.text.strip_edges(),
-		"banner": banner_inp.text.strip_edges(),
-		"lud16": lud_inp.text.strip_edges()
+		"banner": banner_inp.text.strip_edges()
 	}
 	for c in panel.get_children():
 		panel.remove_child(c)
@@ -1230,58 +1280,36 @@ func _on_nostr_reaction_received(url: String, subscription_id: String, event_dic
 	var is_like = content in ["❤️", "+", "🩶"]
 	if is_like:
 		_reaction_counts[target_eid] = _reaction_counts.get(target_eid, 0) + 1
-		_show_snackbar("🩶 いいね: %s..." % short_pk, 2.5)
+		_show_snackbar("いいね: %s..." % short_pk, 2.5)
 		var labels = _timeline_count_labels.get(target_eid, {})
 		if labels.has("like") and is_instance_valid(labels["like"]):
 			var c = _reaction_counts[target_eid]
-			labels["like"].text = "🩶 " + str(c) if c > 0 else ""
+			labels["like"].text = str(c) if c > 0 else ""
 	else:
 		var stamp_map = _stamp_counts.get(target_eid, {})
 		stamp_map[content] = stamp_map.get(content, 0) + 1
 		_stamp_counts[target_eid] = stamp_map
-		_show_snackbar("📝 スタンプ: %s..." % short_pk, 2.5)
+		_show_snackbar("スタンプ: %s..." % short_pk, 2.5)
 		var labels = _timeline_count_labels.get(target_eid, {})
 		if labels.has("stamp") and is_instance_valid(labels["stamp"]):
 			var total = 0
 			for k in stamp_map: total += stamp_map[k]
-			labels["stamp"].text = "📝 " + str(total) if total > 0 else ""
+			labels["stamp"].text = str(total) if total > 0 else ""
 
-func _on_nostr_zap_receipt_received(url: String, subscription_id: String, event_dict: Dictionary) -> void:
-	var pubkey = event_dict.get("pubkey", "")
-	var short_pk = pubkey.left(8)
-	var amount = ""
-	var target_eid = ""
-	var tags = event_dict.get("tags", [])
-	for tag in tags:
-		if tag is Array and tag.size() >= 2:
-			if tag[0] == "amount":
-				amount = tag[1]
-			elif tag[0] == "e" and target_eid.is_empty():
-				target_eid = tag[1]
-	if not amount.is_empty() and not target_eid.is_empty():
-		var sats = int(amount) / 1000
-		_zap_counts[target_eid] = _zap_counts.get(target_eid, 0) + 1
-		_zap_amounts[target_eid] = _zap_amounts.get(target_eid, 0) + sats
-		_show_snackbar("⚡ Zap: %s sats from %s..." % [sats, short_pk], 3.0)
-		var labels = _timeline_count_labels.get(target_eid, {})
-		if labels.has("zap") and is_instance_valid(labels["zap"]):
-			var zc = _zap_counts[target_eid]
-			var za = _zap_amounts[target_eid]
-			labels["zap"].text = "⚡ " + str(zc) if zc > 0 else ""
-			if za > 0:
-				labels["zap"].text += " (" + str(za) + "sats)"
+
 
 func _on_nostr_direct_message_received(url: String, subscription_id: String, event_dict: Dictionary) -> void:
 	var pubkey = event_dict.get("pubkey", "")
 	if pubkey == NostrGD.GetPublicKeyHex():
 		return
 	var short_pk = pubkey.left(8)
-	_show_snackbar("💬 DM from %s..." % short_pk, 3.0)
+	_show_snackbar("DM from %s..." % short_pk, 3.0)
 
 func _on_nostr_event_received(subscription_id: String, event_dict: Dictionary) -> void:
 	match subscription_id:
 		"profile_resolver":
 			_profile_request_active = false
+			_profile_request_time = 0
 			_parse_profile_event(event_dict)
 		_:
 			if event_dict.has("kind") and event_dict["kind"] == 0:
@@ -1315,9 +1343,14 @@ func _setup_stamp_popup() -> void:
 	grid.columns = 5
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
-	for emoji in ["👍", "❤️", "😂", "🎉", "🔥", "😢", "😡", "💯", "🚀", "👀"]:
+	for pair in [["👍", "thumbs-up"], ["❤️", "heart"], ["😂", "smile"], ["🎉", "party"], ["🔥", "flame"], ["😢", "frown"], ["😡", "angry"], ["💯", "award"], ["🚀", "rocket"], ["👀", "eye"]]:
+		var emoji = pair[0]
+		var icon_name = pair[1]
 		var btn = Button.new()
-		btn.text = emoji
+		var icon_tex = _get_icon(icon_name, 20)
+		if icon_tex:
+			btn.icon = icon_tex
+		btn.text = ""
 		btn.custom_minimum_size = Vector2(44, 44) if _is_mobile else Vector2(40, 36)
 		btn.pressed.connect(_on_stamp_selected.bind(emoji))
 		grid.add_child(btn)
@@ -1333,222 +1366,13 @@ func _on_stamp_selected(emoji: String) -> void:
 	_stamp_pubkey = ""
 	$StampPopup.hide()
 
-func _setup_zap_popup() -> void:
-	var popup = PopupPanel.new()
-	popup.name = "ZapPopup"
-	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_top", 12)
-	margin.add_theme_constant_override("margin_bottom", 12)
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
 
-	var amount_label = Label.new()
-	amount_label.text = "Zap 金額 (sats)"
-	vbox.add_child(amount_label)
-	_zap_amount_input = LineEdit.new()
-	_zap_amount_input.placeholder_text = "1"
-	vbox.add_child(_zap_amount_input)
 
-	var msg_label = Label.new()
-	msg_label.text = "メッセージ (任意)"
-	vbox.add_child(msg_label)
-	_zap_msg_input = LineEdit.new()
-	_zap_msg_input.placeholder_text = "コメント..."
-	vbox.add_child(_zap_msg_input)
 
-	var btn_hbox = HBoxContainer.new()
-	btn_hbox.add_theme_constant_override("separation", 8)
-	var send_btn = Button.new()
-	send_btn.text = "送信"
-	send_btn.pressed.connect(_on_zap_send)
-	btn_hbox.add_child(send_btn)
-	var cancel_btn = Button.new()
-	cancel_btn.text = "キャンセル"
-	cancel_btn.pressed.connect(func(): $ZapPopup.hide())
-	btn_hbox.add_child(cancel_btn)
-	vbox.add_child(btn_hbox)
 
-	margin.add_child(vbox)
-	popup.add_child(margin)
-	add_child(popup)
 
-func _on_zap_send() -> void:
-	if _zap_event_id.is_empty() or not NostrGD.IsLoggedIn or _zap_in_progress:
-		return
-	_zap_in_progress = true
-	var amount_str = _zap_amount_input.text.strip_edges()
-	var msg = _zap_msg_input.text.strip_edges()
-	var amount_sats = int(amount_str) if amount_str.is_valid_int() else 1
-	$ZapPopup.hide()
 
-	var profile = profile_cache.get(_zap_pubkey, {})
-	if not profile is Dictionary:
-		status_label.text = "エラー: プロフィールが見つかりません"
-		_zap_in_progress = false
-		return
 
-	var lnurl_url = NostrUtils.resolve_lnurl(profile)
-	if lnurl_url.is_empty():
-		status_label.text = "エラー: LNURL を解決できません"
-		_zap_in_progress = false
-		return
-
-	status_label.text = "LNURL エンドポイントを取得中..."
-	var params = await _http_get_json(lnurl_url)
-	if params.is_empty():
-		_zap_in_progress = false
-		return
-
-	var callback = params.get("callback", "")
-	if callback.is_empty():
-		status_label.text = "エラー: callback URL が見つかりません"
-		_zap_in_progress = false
-		return
-
-	status_label.text = "Zap リクエストを作成中..."
-	var relay_urls: Array[String] = []
-	for entry in RELAY_URL:
-		if _relay_can_write(entry):
-			relay_urls.append(_relay_url(entry))
-	var zap_request = NostrGD.CreateZapRequestEvent(_zap_event_id, _zap_pubkey, amount_sats * 1000, msg, relay_urls)
-
-	status_label.text = "インボイスをリクエスト中..."
-	var zap_json = JSON.stringify(zap_request)
-	var callback_full = callback + "?amount=" + str(amount_sats * 1000) + "&nostr=" + zap_json.uri_encode()
-	var invoice_data = await _http_get_json(callback_full)
-	if invoice_data.is_empty():
-		_zap_in_progress = false
-		return
-
-	var invoice = invoice_data.get("pr", "")
-	if invoice.is_empty():
-		status_label.text = "エラー: インボイスが取得できませんでした"
-		_zap_in_progress = false
-		return
-
-	if NostrGD.IsNwcConfigured:
-		var wallet_pk = NostrGD.NwcWalletPubkey
-		status_label.text = "⚡ NWC 経由で Zap を送信中..."
-		print("NWC: sending pay_invoice (fire-and-forget) to ", wallet_pk)
-		NostrGD.NWCPayInvoice(invoice, wallet_pk)
-		NostrGD.SendEvent(zap_request)
-		status_label.text = "⚡ Zap を送信しました"
-	else:
-		_show_invoice(invoice, amount_sats)
-		status_label.text = "⚡ Lightning インボイスを受信しました。ウォレットで支払ってください。"
-	_zap_event_id = ""
-	_zap_pubkey = ""
-	_zap_in_progress = false
-
-func _http_get_json(url: String) -> Dictionary:
-	var http = HTTPRequest.new()
-	add_child(http)
-	http.request(url)
-	var signal_data = await http.request_completed
-	http.queue_free()
-
-	if signal_data.size() < 4:
-		return {}
-	var result = signal_data[0]
-	var response_code = signal_data[1]
-	var body = signal_data[3]
-
-	if result != HTTPRequest.RESULT_SUCCESS:
-		status_label.text = "HTTP エラー: %d" % result
-		return {}
-
-	if response_code != 200:
-		status_label.text = "HTTP ステータスエラー: %d" % response_code
-		return {}
-
-	var json = JSON.new()
-	if json.parse(body.get_string_from_utf8()) != OK:
-		status_label.text = "JSON パースエラー"
-		return {}
-
-	return json.get_data()
-
-func _setup_invoice_popup() -> void:
-	var popup = PopupPanel.new()
-	popup.name = "InvoicePopup"
-	add_child(popup)
-
-	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_bottom", 16)
-	popup.add_child(margin)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
-	margin.add_child(vbox)
-
-	var title = Label.new()
-	title.text = "⚡ Lightning Invoice"
-	title.add_theme_font_size_override("font_size", 18)
-	vbox.add_child(title)
-
-	_invoice_qr_rect = TextureRect.new()
-	_invoice_qr_rect.custom_minimum_size = Vector2(250, 250)
-	_invoice_qr_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_invoice_qr_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	vbox.add_child(_invoice_qr_rect)
-
-	_invoice_label = Label.new()
-	_invoice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_invoice_label.max_lines_visible = 4
-	vbox.add_child(_invoice_label)
-
-	var btn_hbox = HBoxContainer.new()
-	btn_hbox.add_theme_constant_override("separation", 8)
-	var copy_btn = Button.new()
-	copy_btn.text = "コピー"
-	copy_btn.pressed.connect(func():
-		_safe_clipboard_set(_invoice_label.text)
-		status_label.text = "インボイスをコピーしました"
-	)
-	btn_hbox.add_child(copy_btn)
-	var close_btn = Button.new()
-	close_btn.text = "閉じる"
-	close_btn.pressed.connect(func(): $InvoicePopup.hide())
-	btn_hbox.add_child(close_btn)
-	vbox.add_child(btn_hbox)
-
-func _show_invoice(invoice: String, amount_sats: int) -> void:
-	_invoice_label.text = invoice
-
-	var qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data="
-	qr_url += ("lightning:" + invoice).uri_encode()
-	_load_invoice_qr(qr_url)
-
-	$InvoicePopup.popup_centered(Vector2(320, 420))
-
-func _load_invoice_qr(url: String) -> void:
-	var http = HTTPRequest.new()
-	add_child(http)
-
-	var callback = func(result, response_code, _headers, body, rect):
-		if not is_instance_valid(rect):
-			return
-		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
-			var image = Image.new()
-			var error = image.load_png_from_buffer(body)
-			if error != OK:
-				error = image.load_jpg_from_buffer(body)
-			if error != OK:
-				error = image.load_webp_from_buffer(body)
-			if error == OK and is_instance_valid(rect):
-				rect.texture = ImageTexture.create_from_image(image)
-		if is_instance_valid(http):
-			http.queue_free()
-
-	http.request_completed.connect(callback.bind(_invoice_qr_rect))
-	var err = http.request(url)
-	if err != OK:
-		http.queue_free()
 
 func _on_nostr_timeline_updated(sorted_timeline: Array) -> void:
 	var has_new = false
@@ -1563,19 +1387,6 @@ func _on_nostr_timeline_updated(sorted_timeline: Array) -> void:
 	if _timeline_update_timer.is_processing():
 		_timeline_update_timer.stop()
 	_timeline_update_timer.start()
-
-func _on_nostr_nwc_response(_url: String, _subscription_id: String, event_dict: Dictionary) -> void:
-	if event_dict.has("decrypted_content"):
-		var dc := str(event_dict.decrypted_content)
-		var j := JSON.new()
-		if j.parse(dc) == OK and j.data is Dictionary:
-			var resp: Dictionary = j.data
-			if resp.has("error") and resp.error != null and not str(resp.error).is_empty():
-				status_label.text = "⚡ NWC エラー: " + str(resp.error)
-			elif resp.has("result_type") and resp.result_type != null:
-				status_label.text = "⚡ NWC " + str(resp.result_type) + " 成功"
-		else:
-			status_label.text = "⚡ NWC レスポンス受信"
 
 func _on_timeline_scrolled(value: float) -> void:
 	if _current_section != Section.TIMELINE:
@@ -1606,7 +1417,6 @@ func _reset_timeline() -> void:
 	for child in timeline.get_children():
 		child.queue_free()
 	pending_labels.clear()
-	_zap_buttons_by_pubkey.clear()
 	_pending_embeds.clear()
 	_relays_timeline_subscribed.clear()
 	for entry in RELAY_URL:
@@ -1639,14 +1449,11 @@ func _apply_timeline_update() -> void:
 		child.queue_free()
 
 	pending_labels.clear()
-	_zap_buttons_by_pubkey.clear()
 	_pending_embeds.clear()
 	_timeline_count_labels.clear()
 	_timeline_panels.clear()
 	_reaction_counts.clear()
 	_stamp_counts.clear()
-	_zap_counts.clear()
-	_zap_amounts.clear()
 
 	var count = 0
 	for event in events:
@@ -1704,23 +1511,23 @@ func _on_create_account_button_pressed() -> void:
 
 		_connect_relays()
 		_set_ui_state(UIState.LOGGED_IN)
+		_update_settings_nsec_field()
+
+		profile_cache[NostrGD.GetPublicKeyHex()] = {
+			"name": user_name,
+			"display_name": display_name,
+			"picture": register_picture_input.text.strip_edges(),
+			"banner": register_banner_input.text.strip_edges()
+		}
+		_refresh_profile()
 
 		NostrGD.SendProfileMetaData(
 			user_name,
 			display_name,
 			"Multi-relay test",
 			register_picture_input.text.strip_edges(),
-			register_banner_input.text.strip_edges(),
-			register_lud16_input.text.strip_edges()
+			register_banner_input.text.strip_edges()
 		)
-
-		profile_cache[NostrGD.GetPublicKeyHex()] = {
-			"name": user_name,
-			"display_name": display_name,
-			"picture": register_picture_input.text.strip_edges(),
-			"banner": register_banner_input.text.strip_edges(),
-			"lud16": register_lud16_input.text.strip_edges()
-		}
 
 		if not pool_timer.is_processing():
 			pool_timer.start()
@@ -1737,7 +1544,8 @@ func _on_login_button_pressed() -> void:
 		_save_private_key(key_input_text)
 		_connect_relays()
 		_set_ui_state(UIState.LOGGED_IN)
-		status_label.text = "ログイン完了"
+		_update_settings_nsec_field()
+		_refresh_profile()
 	else:
 		status_label.text = "エラー: 無効な秘密鍵(Hexまたはnsec)です"
 
@@ -1753,7 +1561,6 @@ func _on_disconnect_button_pressed() -> void:
 	for child in timeline.get_children():
 		child.queue_free()
 	pending_labels.clear()
-	_zap_buttons_by_pubkey.clear()
 	_pending_embeds.clear()
 	for entry in RELAY_URL:
 		NostrGD.DisconnectFromRelay(_relay_url(entry))
@@ -2086,7 +1893,7 @@ func _refresh_bookmarks() -> void:
 		child.queue_free()
 	if _bookmarked_events.is_empty():
 		var empty_label = Label.new()
-		empty_label.text = "ブックマークはありません\nイベントの 🔖 ボタンで追加"
+		empty_label.text = "ブックマークはありません\nイベントのブックマークボタンで追加"
 		empty_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2165,7 +1972,7 @@ func _render_bookmark_card(event: Dictionary) -> PanelContainer:
 	vbox.add_child(btn_hbox)
 
 	var remove_btn = Button.new()
-	remove_btn.text = "🔖 削除"
+	remove_btn.text = "削除"
 	remove_btn.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
 	remove_btn.add_theme_font_size_override("font_size", 10)
 	remove_btn.pressed.connect(_remove_bookmark.bind(event_id))
@@ -2334,7 +2141,10 @@ func _on_image_file_selected(path: String) -> void:
 						current_text += "\n"
 					message_input.text = current_text + url
 					status_label.text = "画像URLを挿入しました"
-					return
+		return
+
+	if not pool_timer.is_processing():
+		pool_timer.start()
 			status_label.text = "URLが取得できませんでした。手動でURLを貼ってください。"
 		else:
 			status_label.text = "アップロード失敗(" + str(response_code) + ")。手動で画像URLを貼ってください。"
@@ -2384,7 +2194,8 @@ func _on_like_toggle(event_id: String, target_pubkey: String, btn: Button) -> vo
 	if _liked_events.has(event_id):
 		NostrGD.SendReaction(event_id, target_pubkey, "-")
 		_liked_events.erase(event_id)
-		btn.text = "♡"
+		btn.icon = _get_icon("heart")
+		btn.text = ""
 		btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	else:
 		NostrGD.SendReaction(event_id, target_pubkey, "❤️")
@@ -2396,15 +2207,6 @@ func _open_stamp(event_id: String, pubkey: String) -> void:
 	_stamp_event_id = event_id
 	_stamp_pubkey = pubkey
 	$StampPopup.popup_centered(Vector2(280, 200))
-
-func _on_zap(event_id: String, target_pubkey: String) -> void:
-	if not NostrGD.IsLoggedIn:
-		return
-	_zap_event_id = event_id
-	_zap_pubkey = target_pubkey
-	_zap_amount_input.text = ""
-	_zap_msg_input.text = ""
-	$ZapPopup.popup_centered(Vector2(300, 220))
 
 func _handle_embed_response(event_dict: Dictionary) -> void:
 	var embed_id = event_dict.get("id", "")
@@ -2525,14 +2327,14 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 
 	if is_repost:
 		var repost_header = Label.new()
-		repost_header.text = "🔁 Repost"
+		repost_header.text = "Repost"
 		repost_header.add_theme_color_override("font_color", Color(0.4, 0.8, 0.6))
 		repost_header.add_theme_font_size_override("font_size", 12)
 		right_vbox.add_child(repost_header)
 
 	if is_reply:
 		var reply_badge = Label.new()
-		reply_badge.text = "💬 Reply"
+		reply_badge.text = "Reply"
 		reply_badge.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
 		reply_badge.add_theme_font_size_override("font_size", 12)
 		right_vbox.add_child(reply_badge)
@@ -2577,7 +2379,8 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 		_act_hover.corner_radius_bottom_left = 4
 		var _btn_sz = _btn_size(30, 24)
 		var like_btn = Button.new()
-		like_btn.text = "♡"
+		like_btn.icon = _get_icon("heart")
+		like_btn.text = ""
 		like_btn.custom_minimum_size = _btn_sz
 		like_btn.add_theme_stylebox_override("normal", _act_bg)
 		like_btn.add_theme_stylebox_override("hover", _act_hover)
@@ -2588,33 +2391,17 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 		action_hbox.add_child(like_btn)
 
 		var stamp_btn = Button.new()
-		stamp_btn.text = "☆"
+		stamp_btn.icon = _get_icon("star")
+		stamp_btn.text = ""
 		stamp_btn.custom_minimum_size = _btn_sz
 		stamp_btn.add_theme_stylebox_override("normal", _act_bg)
 		stamp_btn.add_theme_stylebox_override("hover", _act_hover)
 		stamp_btn.pressed.connect(_open_stamp.bind(event_id, pubkey))
 		action_hbox.add_child(stamp_btn)
 
-		var has_wallet = profile_cache.has(pubkey) and profile_cache[pubkey] is Dictionary and (NostrUtils.has_lud(profile_cache[pubkey]))
-		var zap_vbox = VBoxContainer.new()
-		zap_vbox.add_theme_constant_override("separation", 1)
-		var zap_btn = Button.new()
-		zap_btn.text = "⚡"
-		zap_btn.custom_minimum_size = _btn_sz
-		zap_btn.add_theme_stylebox_override("normal", _act_bg)
-		zap_btn.add_theme_stylebox_override("hover", _act_hover)
-		zap_btn.visible = has_wallet
-		zap_btn.pressed.connect(_on_zap.bind(event_id, pubkey))
-		zap_vbox.add_child(zap_btn)
-
-		if not _zap_buttons_by_pubkey.has(pubkey):
-			_zap_buttons_by_pubkey[pubkey] = []
-		_zap_buttons_by_pubkey[pubkey].append(zap_btn)
-
-		action_hbox.add_child(zap_vbox)
-
 		var reply_btn = Button.new()
-		reply_btn.text = "↩"
+		reply_btn.icon = _get_icon("reply")
+		reply_btn.text = ""
 		reply_btn.custom_minimum_size = _btn_sz
 		reply_btn.add_theme_stylebox_override("normal", _act_bg)
 		reply_btn.add_theme_stylebox_override("hover", _act_hover)
@@ -2623,7 +2410,8 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 		action_hbox.add_child(reply_btn)
 
 		var repost_btn = Button.new()
-		repost_btn.text = "↻"
+		repost_btn.icon = _get_icon("repeat")
+		repost_btn.text = ""
 		repost_btn.custom_minimum_size = _btn_sz
 		repost_btn.add_theme_stylebox_override("normal", _act_bg)
 		repost_btn.add_theme_stylebox_override("hover", _act_hover)
@@ -2631,7 +2419,8 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 		action_hbox.add_child(repost_btn)
 
 		var bookmark_btn = Button.new()
-		bookmark_btn.text = "🔖"
+		bookmark_btn.icon = _get_icon("bookmark")
+		bookmark_btn.text = ""
 		bookmark_btn.custom_minimum_size = _btn_sz
 		bookmark_btn.add_theme_stylebox_override("normal", _act_bg)
 		bookmark_btn.add_theme_stylebox_override("hover", _act_hover)
@@ -2663,26 +2452,13 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 		stamp_count.add_theme_font_size_override("font_size", 10)
 		count_hbox.add_child(stamp_count)
 
-		var zc = _zap_counts.get(event_id, 0)
-		var za = _zap_amounts.get(event_id, 0)
-		var zap_count = Label.new()
-		zap_count.name = "ZapCount"
-		zap_count.text = "Zap " + str(zc) if zc > 0 else ""
-		if za > 0:
-			zap_count.text += " (" + str(za) + "sats)"
-		zap_count.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-		zap_count.add_theme_font_size_override("font_size", 10)
-		count_hbox.add_child(zap_count)
-
 		_timeline_count_labels[event_id] = {
 			like = like_count,
-			stamp = stamp_count,
-			zap = zap_count
+			stamp = stamp_count
 		}
 
 	_reaction_counts[event_id] = _reaction_counts.get(event_id, 0)
 	_stamp_counts[event_id] = _stamp_counts.get(event_id, {})
-	_zap_counts[event_id] = _zap_counts.get(event_id, 0)
 
 	if profile_cache.has(pubkey) and profile_cache[pubkey] is Dictionary:
 		var profile = profile_cache[pubkey]
@@ -2701,8 +2477,7 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 		pending_labels[pubkey].append({
 			"name_label": name_label,
 			"avatar_rect": avatar_rect,
-			"content": content,
-			"zap_btn": null
+			"content": content
 		})
 		if not pubkey_request_pool.has(pubkey):
 			pubkey_request_pool.append(pubkey)
@@ -2717,7 +2492,7 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 			tag_btn.add_theme_color_override("font_color", Color(0.4, 0.6, 1.0))
 			tag_btn.add_theme_font_size_override("font_size", 11)
 			var tag_url = "https://nostr.band/?q=" + tag.trim_prefix("#").uri_encode()
-			tag_btn.pressed.connect(func(): OS.shell_open(tag_url))
+			tag_btn.pressed.connect(func(): _open_url(tag_url))
 			tag_hbox.add_child(tag_btn)
 
 	var note_id_from_content: String = ""
@@ -2788,14 +2563,14 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 				_pending_embeds[repost_eid] = { "nested_vbox": nested_vbox, "parent_event_id": event.get("id", "") }
 		elif has_npub_link and npub_url != "":
 			var url_label = Label.new()
-			url_label.text = "🔗 " + npub_url
+			url_label.text = npub_url
 			url_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			url_label.add_theme_color_override("font_color", Color(0.5, 0.7, 1))
 			url_label.add_theme_font_size_override("font_size", 11)
 			nested_vbox.add_child(url_label)
 			var open_btn = Button.new()
 			open_btn.text = "ブラウザで開く"
-			open_btn.pressed.connect(func(): OS.shell_open(npub_url))
+			open_btn.pressed.connect(func(): _open_url(npub_url))
 			nested_vbox.add_child(open_btn)
 		elif note_id_from_content != "":
 			var loading_label = Label.new()
@@ -2832,10 +2607,10 @@ func _rebuild_timeline_item(event: Dictionary) -> void:
 
 	for link in all_links:
 		var link_btn = LinkButton.new()
-		link_btn.text = "🔗 " + link
+		link_btn.text = link
 		link_btn.underline = LinkButton.UNDERLINE_MODE_ON_HOVER
 		link_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		link_btn.pressed.connect(func(): OS.shell_open(link))
+		link_btn.pressed.connect(func(): _open_url(link))
 		right_vbox.add_child(link_btn)
 
 func _load_and_display_image(url: String, parent_node: Node) -> void:
@@ -3001,13 +2776,18 @@ func _load_and_apply_banner(url: String, target_rect: TextureRect) -> void:
 
 func _on_pool_timer_timeout() -> void:
 	if _profile_request_active:
-		return
+		var elapsed = Time.get_ticks_msec() - _profile_request_time
+		if _profile_request_time > 0 and elapsed < 15000:
+			return
+		_profile_request_active = false
 
 	if pubkey_request_pool.is_empty():
 		_profile_request_active = false
+		_profile_request_time = 0
 		return
 
 	_profile_request_active = true
+	_profile_request_time = Time.get_ticks_msec()
 	var pool_copy = pubkey_request_pool.duplicate()
 	pubkey_request_pool.clear()
 
@@ -3044,12 +2824,6 @@ func _parse_profile_event(event: Dictionary) -> void:
 					_refresh_notifications()
 					break
 
-		if _zap_buttons_by_pubkey.has(pubkey):
-			var has_wallet = NostrUtils.has_lud(profile_data)
-			for btn in _zap_buttons_by_pubkey[pubkey]:
-				if is_instance_valid(btn):
-					btn.visible = has_wallet
-
 		if not _pending_profile_events.is_empty() and not _timeline_update_timer.is_processing():
 			_timeline_update_timer.start()
 
@@ -3084,8 +2858,24 @@ func _copy_account_pubkey() -> void:
 	status_label.text = "npub をコピーしました"
 
 func _safe_clipboard_set(text: String) -> void:
-	if not OS.has_feature("web"):
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("navigator.clipboard.writeText('" + text.replace("\\", "\\\\").replace("'", "\\'") + "').catch(function(e) {})")
+	else:
 		DisplayServer.clipboard_set(text)
+
+func _open_url(url: String) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.open('" + url.replace("\\", "\\\\").replace("'", "\\'") + "','_blank')")
+	else:
+		OS.shell_open(url)
+
+func _update_settings_nsec_field() -> void:
+	var panel = $MainPanel/SettingsPanel
+	if panel == null:
+		return
+	var nsec_input = panel.get_node_or_null("SettingsNsecInput") as LineEdit
+	if nsec_input != null and NostrGD.IsLoggedIn:
+		nsec_input.text = NostrGD.GetPrivateKeyNsec()
 
 var _snackbar_timer: Timer = null
 
@@ -3132,10 +2922,10 @@ func _render_youtube_embed(video_id: String, parent: Node) -> void:
 	var yt_width = _get_media_max_width()
 	var yt_height = yt_width * 9 / 16
 	var play_btn = Button.new()
-	play_btn.text = "▶ " + video_id
+	play_btn.text = video_id
 	play_btn.custom_minimum_size = Vector2(yt_width, 40)
 	play_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	play_btn.pressed.connect(func(): OS.shell_open(yt_url))
+	play_btn.pressed.connect(func(): _open_url(yt_url))
 	yt_vbox.add_child(play_btn)
 
 	var thumb_rect = TextureRect.new()
@@ -3148,7 +2938,7 @@ func _render_youtube_embed(video_id: String, parent: Node) -> void:
 
 	thumb_rect.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			OS.shell_open(yt_url)
+			_open_url(yt_url)
 	)
 
 	_load_youtube_thumbnail(thumb_url, thumb_rect)

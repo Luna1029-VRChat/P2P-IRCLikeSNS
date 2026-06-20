@@ -47,6 +47,7 @@ var _nwc_pending_method: String = ""
 
 var _web_sign_pending: bool = false
 var _signature_pending: String = ""
+var _pending_web_event: Dictionary = {}
 
 var _self_profile_check_subs: Dictionary = {}
 var _last_self_profile_event: Dictionary = {}
@@ -361,13 +362,21 @@ func _make_event(kind: int, content: String, tags: Array) -> Dictionary:
 	}
 
 
-func _sign_and_broadcast(event: Dictionary) -> void:
+func _sign_and_broadcast(event: Dictionary) -> Dictionary:
 	if _private_key_hex.is_empty() and not _is_extension_login:
-		return
+		return {}
 	if not _private_key_hex.is_empty():
 		var signed := Secp256k1.sign_event(_private_key_hex, event.duplicate(true))
 		_broadcast_or_queue(["EVENT", signed])
 		_process_event_for_timeline(signed)
+		return signed
+	elif _is_extension_login and OS.has_feature("web"):
+		if _web_sign_pending:
+			return {}
+		var ev_json := JSON.new().stringify(event.duplicate())
+		_pending_web_event = event.duplicate()
+		_initiate_web_sign(ev_json)
+	return {}
 
 
 func _sign_with_key(event: Dictionary, key_hex: String) -> Dictionary:
@@ -397,10 +406,16 @@ func SendProfileMetaData(name: String, display_name: String, about: String = "",
 	if not lud16.is_empty():
 		profile.lud16 = lud16
 	var ev := _make_event(0, JSON.new().stringify(profile), [])
-	var signed := Secp256k1.sign_event(_private_key_hex, ev)
-	_last_self_profile_event = signed
-	_broadcast_or_queue(["EVENT", signed])
-	_process_event_for_timeline(signed)
+	if not _private_key_hex.is_empty():
+		var signed := Secp256k1.sign_event(_private_key_hex, ev)
+		_last_self_profile_event = signed
+		_broadcast_or_queue(["EVENT", signed])
+		_process_event_for_timeline(signed)
+	elif _is_extension_login and OS.has_feature("web"):
+		if _web_sign_pending:
+			return
+		var ev_json := JSON.new().stringify(ev)
+		_initiate_web_sign(ev_json)
 
 
 func SendRepost(target_event_id: String, quote: String = "") -> void:
@@ -529,10 +544,6 @@ func RequestCustomEvents(subscription_id: String, kinds: Array, pubkey: String) 
 
 func RequestUserEvents(subscription_id: String, kinds: Array, author: String) -> void:
 	var filter := {"kinds": kinds, "authors": [author], "limit": 10}
-	_broadcast_or_queue(["REQ", subscription_id, filter])
-
-func RequestEventsWithTag(subscription_id: String, kinds: Array, tag_name: String, tag_value: String) -> void:
-	var filter := {"kinds": kinds, "#" + tag_name: [tag_value], "limit": 100}
 	_broadcast_or_queue(["REQ", subscription_id, filter])
 
 
@@ -925,12 +936,19 @@ func _initiate_web_sign(event_json: String) -> void:
 		return
 	_web_sign_pending = true
 	set_process(true)
+	var escaped := event_json.replace("\\", "\\\\").replace("'", "\\'")
 	JavaScriptBridge.eval("""
-		window.nostr.signEvent(""" + event_json + """).then(function(signedEvent) {
-			window._nostrGDSig = signedEvent.sig;
-		}).catch(function(err) {
-			window._nostrGDError = 'Signing failed: ' + err.message;
-		});
+		try {
+			var ev = JSON.parse('""" + escaped + """');
+			delete ev.id;
+			window.nostr.signEvent(ev).then(function(signedEvent) {
+				window._nostrGDSig = JSON.stringify(signedEvent);
+			}).catch(function(err) {
+				window._nostrGDError = 'Signing failed: ' + err.message;
+			});
+		} catch(e) {
+			window._nostrGDError = 'JS error: ' + e.message;
+		}
 	""")
 
 
@@ -941,11 +959,27 @@ func _poll_web_sign() -> void:
 	if not err.is_empty():
 		_web_sign_pending = false
 		_signature_pending = ""
+		_pending_web_event = {}
+		push_error("NostrGD: Web sign error: ", err)
 		return
-	var sig := str(JavaScriptBridge.eval("window._nostrGDSig || ''"))
-	if not sig.is_empty():
-		_web_sign_pending = false
-		_signature_pending = sig
+	var sig_raw := str(JavaScriptBridge.eval("window._nostrGDSig || ''"))
+	if sig_raw.is_empty():
+		return
+	_web_sign_pending = false
+	var j := JSON.new()
+	if j.parse(sig_raw) != OK:
+		_signature_pending = ""
+		_pending_web_event = {}
+		return
+	var signed_event: Dictionary = j.data
+	if not signed_event.has("sig") or not signed_event.has("id"):
+		_signature_pending = ""
+		_pending_web_event = {}
+		return
+	_signature_pending = signed_event.sig
+	_broadcast_or_queue(["EVENT", signed_event])
+	_process_event_for_timeline(signed_event)
+	_pending_web_event = {}
 
 
 # ──────────────────────────────────────────
