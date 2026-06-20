@@ -42,6 +42,13 @@ func _ready() -> void:
 	send_btn.pressed.connect(_on_send_pressed)
 	message_input.text_submitted.connect(func(_t): _on_send_pressed())
 
+	var x_tex := load("res://icons/x.svg") as Texture2D
+	if x_tex:
+		var img := x_tex.get_image()
+		if img:
+			img.resize(16, 16, Image.INTERPOLATE_LANCZOS)
+			overlay_close_btn.icon = ImageTexture.create_from_image(img)
+
 	_wh.state_changed.connect(_on_wh_state_changed)
 	_wh.msg_received.connect(_on_dc_msg_received)
 	_wh.data_channel_opened.connect(_on_data_channel_opened)
