@@ -72,7 +72,7 @@ func _on_wh_state_changed(state: int) -> void:
 		status_label.text = "ルームを検出中..."
 		listening_hint.visible = false
 
-		await get_tree().create_timer(2.0).timeout
+		await get_tree().create_timer(3.0).timeout
 		if not _has_joined:
 			_auto_join()
 

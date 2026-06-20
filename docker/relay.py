@@ -122,19 +122,56 @@ class EventStore:
 # ---------------------------------------------------------------------------
 
 _registry: dict[ServerConnection, str | None] = {}
+_subscriptions: dict[ServerConnection, dict[str, list[dict]]] = {}
 store = EventStore()
 
 
+def _event_matches_any_filter(event: dict, filters: list[dict]) -> bool:
+    """Check if *event* matches at least one of the given REQ filters."""
+    import itertools
+    for fil in filters:
+        kinds = fil.get("kinds")
+        if kinds is not None and event.get("kind") not in kinds:
+            continue
+        authors = fil.get("authors")
+        if authors is not None and event.get("pubkey") not in authors:
+            continue
+        ids = fil.get("ids")
+        if ids is not None and event.get("id") not in ids:
+            continue
+        tag_ok = True
+        for key, val in fil.items():
+            if key.startswith("#") and len(key) == 2:
+                tag_name = key[1]
+                tag_vals = val if isinstance(val, list) else [val]
+                tags = event.get("tags", [])
+                found = False
+                for t in tags:
+                    if isinstance(t, list) and len(t) >= 2 and t[0] == tag_name and t[1] in tag_vals:
+                        found = True
+                        break
+                if not found:
+                    tag_ok = False
+                    break
+        if not tag_ok:
+            continue
+        return True
+    return False
+
+
 async def broadcast_event(event: dict, sender: ServerConnection) -> None:
-    """Send EVENT to all connected clients except *sender*."""
-    payload = json.dumps(["EVENT", "_", event])
-    for conn in list(_registry.keys()):
+    """Send EVENT to each client with the correct sub_id for their matching subscriptions."""
+    for conn, conn_subs in list(_subscriptions.items()):
         if conn is sender:
             continue
-        try:
-            await conn.send(payload)
-        except Exception:
-            _registry.pop(conn, None)
+        for sub_id, filters in conn_subs.items():
+            if _event_matches_any_filter(event, filters):
+                try:
+                    await conn.send(json.dumps(["EVENT", sub_id, event]))
+                except Exception:
+                    _registry.pop(conn, None)
+                    _subscriptions.pop(conn, None)
+                break
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +181,7 @@ async def broadcast_event(event: dict, sender: ServerConnection) -> None:
 async def handle_client(ws: ServerConnection) -> None:
     pubkey: str | None = None
     subs: dict[str, list[dict]] = {}
+    _subscriptions[ws] = subs
 
     log.info("New connection from %s", ws.remote_address)
 
@@ -198,6 +236,7 @@ async def handle_client(ws: ServerConnection) -> None:
             if remaining == 0:
                 store.delete_pubkey(pubkey)
         _registry.pop(ws, None)
+        _subscriptions.pop(ws, None)
         log.info("Connection closed from %s", ws.remote_address)
 
 
