@@ -302,14 +302,16 @@ func _on_event_received(sub_id: String, event: Dictionary):
 				ps.state = State.IDLE
 				return
 			if ps.pc:
-				ps.pc.set_remote_description("offer", msg.get("sdp", ""))
+				var filtered_sdp := _filter_ipv4_from_sdp(msg.get("sdp", ""))
+				ps.pc.set_remote_description("offer", filtered_sdp)
 				_flush_pending_ice(ps)
 		"answer":
 			var ps = peers.get(from)
 			if not ps or not ps.pc:
 				return
 			hud_log("Got answer, setting remote desc")
-			ps.pc.set_remote_description("answer", msg.get("sdp", ""))
+			var filtered_sdp := _filter_ipv4_from_sdp(msg.get("sdp", ""))
+			ps.pc.set_remote_description("answer", filtered_sdp)
 			_flush_pending_ice(ps)
 		"ice":
 			var ps = peers.get(from)
@@ -358,10 +360,21 @@ func _flush_pending_ice(ps: PeerSession):
 	ps.pending_ice.clear()
 
 func _on_sdp_created(ps: PeerSession, p_type: String, p_sdp: String):
-	ps.pc.set_local_description(p_type, p_sdp)
+	var filtered_sdp := _filter_ipv4_from_sdp(p_sdp)
+	ps.pc.set_local_description(p_type, filtered_sdp)
 	_flush_pending_ice(ps)
-	var msg = {"type": p_type, "sdp": p_sdp}
+	var msg = {"type": p_type, "sdp": filtered_sdp}
 	_send_signal(msg, ps.pubkey)
+
+
+func _filter_ipv4_from_sdp(sdp: String) -> String:
+	var lines := sdp.split("\n")
+	var filtered := []
+	for line in lines:
+		if line.begins_with("a=candidate:") and _is_ipv4_candidate(line):
+			continue
+		filtered.append(line)
+	return "\n".join(filtered)
 
 func _on_ice_candidate(ps: PeerSession, mid: String, index: int, candidate: String) -> void:
 	ps.ice_sent += 1

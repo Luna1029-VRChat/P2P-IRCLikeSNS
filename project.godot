@@ -44,5 +44,8 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 
+[display]
+window/size/scale_2d=2.0
+
 [web]
 canvas/export/embed_icon_in_html=true

@@ -41,6 +41,8 @@ func _ready() -> void:
 	send_btn.pressed.connect(_on_send_pressed)
 	message_input.text_submitted.connect(func(_t): _on_send_pressed())
 
+	join_btn.text = "参加"
+
 	var x_tex := load("res://icons/x.svg") as Texture2D
 	if x_tex:
 		var img := x_tex.get_image()
@@ -133,6 +135,8 @@ func _auto_join() -> void:
 	else:
 		_become_guest()
 
+	join_overlay.visible = false
+	join_area.visible = false
 	show_join_btn.visible = true
 	message_input.editable = true
 	send_btn.disabled = false
@@ -159,12 +163,12 @@ func _on_join_pressed() -> void:
 		return
 
 	_display_name = new_name
-	if _has_joined:
+	if not _has_joined:
+		_auto_join()
+	else:
 		var role = "host" if _is_host else "guest"
 		_register_presence(role)
 		_add_system_message("名前変更: " + _display_name)
-	else:
-		_auto_join()
 
 	_update_join_status()
 
