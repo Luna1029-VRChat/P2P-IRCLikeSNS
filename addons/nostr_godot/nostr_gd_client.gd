@@ -531,6 +531,10 @@ func RequestUserEvents(subscription_id: String, kinds: Array, author: String) ->
 	var filter := {"kinds": kinds, "authors": [author], "limit": 10}
 	_broadcast_or_queue(["REQ", subscription_id, filter])
 
+func RequestEventsWithTag(subscription_id: String, kinds: Array, tag_name: String, tag_value: String) -> void:
+	var filter := {"kinds": kinds, "#" + tag_name: [tag_value], "limit": 100}
+	_broadcast_or_queue(["REQ", subscription_id, filter])
+
 
 func CloseSubscription(subscription_id: String) -> void:
 	_broadcast_message(["CLOSE", subscription_id])
