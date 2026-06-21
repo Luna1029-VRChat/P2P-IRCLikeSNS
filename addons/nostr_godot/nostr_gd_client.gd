@@ -1,6 +1,7 @@
 extends Node
 
 const Secp256k1 = preload("res://addons/nostr_godot/secp256k1.gd")
+const WebBridge = preload("res://addons/nostr_godot/nostr_crypto_web_bridge.gd")
 const ConfigPath = "user://nostr_config.cfg"
 
 signal Connected(url: String)
@@ -54,6 +55,8 @@ var _last_self_profile_event: Dictionary = {}
 
 
 func _ready() -> void:
+	if OS.has_feature("web"):
+		WebBridge.inject()
 	set_process(false)
 
 
@@ -549,6 +552,7 @@ func RequestUserEvents(subscription_id: String, kinds: Array, author: String) ->
 func RequestEventsWithTag(subscription_id: String, kinds: Array, tag_name: String, tag_value: String) -> void:
 	var filter := {"kinds": kinds, "#" + tag_name: [tag_value]}
 	_broadcast_or_queue(["REQ", subscription_id, filter])
+
 
 func CloseSubscription(subscription_id: String) -> void:
 	_broadcast_message(["CLOSE", subscription_id])

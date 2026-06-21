@@ -328,14 +328,22 @@ static func _tagged_hash(tag: String, msg: PackedByteArray) -> PackedByteArray:
 	return ctx.finish()
 
 static var _crypto: Variant
+static var _WebBridge = preload("nostr_crypto_web_bridge.gd")
 
 static func _get_crypto() -> Variant:
-	if _crypto == null:
-		if Engine.has_singleton("NostrCrypto"):
-			_crypto = Engine.get_singleton("NostrCrypto")
-		else:
-			_crypto = false
-	return _crypto if _crypto else null
+	if _crypto != null:
+		return _crypto if _crypto else null
+	if Engine.has_singleton("NostrCrypto"):
+		_crypto = Engine.get_singleton("NostrCrypto")
+		return _crypto
+	if OS.has_feature("web"):
+		_WebBridge.inject()
+		if _WebBridge.is_ready():
+			_crypto = _WebBridge.new()
+			return _crypto
+		return null
+	_crypto = false
+	return null
 
 static func schnorr_sign(private_key_hex: String, message: PackedByteArray) -> PackedByteArray:
 	var crypto = _get_crypto()
