@@ -78,7 +78,7 @@ func _on_wh_state_changed(state: int) -> void:
 		_start_discover_poll()
 
 		_display_name = _my_pubkey.left(12)
-		var has_native = Engine.has_singleton("NostrCrypto")
+		var has_native = Secp256k1._get_crypto() != null
 		print("ChatManager: native crypto=", has_native)
 		_register_presence("init")
 		status_label.text = "ルームを検出中..."
