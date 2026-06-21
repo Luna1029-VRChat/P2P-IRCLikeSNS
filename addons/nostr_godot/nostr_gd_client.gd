@@ -589,6 +589,9 @@ func _handle_incoming_packet(url: String) -> void:
 				var ev := parsed[2] as Dictionary
 				if ev == null:
 					return
+				var ev_kind = ev.get("kind", 0)
+				var ev_pk = str(ev.get("pubkey", "")).left(12)
+				print("NostrGD: EVENT sub=", sub_id, " kind=", ev_kind, " from=", ev_pk)
 				if sub_id in _self_profile_check_subs and ev.get("kind") == 0:
 					_self_profile_check_subs[sub_id].received_profile = true
 				EventReceived.emit(sub_id, ev)
