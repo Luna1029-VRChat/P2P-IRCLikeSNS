@@ -3,6 +3,7 @@ extends Control
 const RELAY_URL := "wss://p2p-nostr.yoinekodo.jp"
 const APP_TAG := "p2p-irc"
 const DISCOVER_SUB_ID := "sess_discover"
+const HOST_SIG_SUB_ID := "host_sig"
 const SUBSCRIBED_STATE := 2
 
 var _wh: Node
@@ -70,6 +71,9 @@ func _on_wh_state_changed(state: int) -> void:
 		var kinds0: Array = [0]
 		NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
 
+		var kinds21000: Array = [21000]
+		NostrGD.RequestEventsWithTag(HOST_SIG_SUB_ID, kinds21000, "s", APP_TAG)
+
 		_display_name = _my_pubkey.left(12)
 		_register_presence("init")
 		status_label.text = "ルームを検出中..."
@@ -89,7 +93,11 @@ func _on_nostr_event_received(sub_id: String, ev: Dictionary) -> void:
 
 	if (sub_id == DISCOVER_SUB_ID or sub_id == "_") and kind == 0:
 		_discover_events.append(ev.duplicate())
+		print("ChatManager: kind 0 received role=", _get_role_from_event(ev), " pubkey=", ev.get("pubkey", "").left(12))
 		_process_discover_event(ev, false)
+
+	if (sub_id == HOST_SIG_SUB_ID or sub_id == "_") and kind == 21000:
+		_on_host_signal_received(ev)
 
 
 func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
@@ -121,10 +129,54 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 			_is_host = false
 			_add_system_message("別のホストを検出したためゲストに変更します")
 			_wh.join_host(pubkey)
+		if _host_pubkey != pubkey:
+			_add_system_message("ホスト検出: " + name + " (" + pubkey.left(12) + ")")
 		_host_pubkey = pubkey
-		_add_system_message("ホスト検出: " + name + " (" + pubkey.left(12) + ")")
 		_update_status_bar()
 		_update_join_status()
+		_register_presence("host" if _is_host else "guest")
+
+
+func _get_role_from_event(ev: Dictionary) -> String:
+	var content = str(ev.get("content", ""))
+	var j = JSON.new()
+	if j.parse(content) != OK:
+		return ""
+	var data = j.get_data()
+	if not data is Dictionary:
+		return ""
+	return str(data.get("role", ""))
+
+func _on_host_signal_received(ev: Dictionary) -> void:
+	var content = str(ev.get("content", ""))
+	var pubkey = str(ev.get("pubkey", ""))
+	var j = JSON.new()
+	if j.parse(content) != OK:
+		return
+	var data = j.get_data()
+	if not data is Dictionary:
+		return
+	var t = str(data.get("type", ""))
+	if t == "host_announce" and pubkey != _my_pubkey:
+		print("ChatManager: host_signal host_announce from ", pubkey.left(12))
+		if _is_host:
+			var other_ts = ev.get("created_at", 0)
+			var i_should_remain = _host_since > 0 and other_ts > 0 and _host_since <= other_ts
+			if _host_since > 0 and other_ts > 0 and _host_since == other_ts:
+				i_should_remain = _my_pubkey < pubkey
+			if i_should_remain:
+				return
+			_is_host = false
+			_add_system_message("別のホストを検出したためゲストに変更します")
+			_wh.join_host(pubkey)
+		if _host_pubkey != pubkey:
+			_add_system_message("ホスト検出 (sig): " + pubkey.left(12))
+		_host_pubkey = pubkey
+		_update_status_bar()
+		_update_join_status()
+		_register_presence("host" if _is_host else "guest")
+		if not _is_host and not _has_joined:
+			_auto_join()
 
 
 
@@ -195,6 +247,9 @@ func _become_host() -> void:
 	}
 	var tags: Array = [["s", APP_TAG]]
 	NostrGD.SendCustomEvent(0, JSON.new().stringify(content_dict), tags)
+
+	# kind 21000 host_announce to room
+	NostrGD.SendCustomEvent(21000, JSON.new().stringify({"type": "host_announce", "pubkey": _my_pubkey}), tags)
 
 	_join_order.clear()
 	_join_order.append(_my_pubkey)
@@ -299,6 +354,9 @@ func _promote_to_host() -> void:
 	}
 	var tags: Array = [["s", APP_TAG]]
 	NostrGD.SendCustomEvent(0, JSON.new().stringify(content_dict), tags)
+
+	# kind 21000 host_announce to room
+	NostrGD.SendCustomEvent(21000, JSON.new().stringify({"type": "host_announce", "pubkey": _my_pubkey}), tags)
 
 	if not _join_order.has(_my_pubkey):
 		_join_order.insert(0, _my_pubkey)
