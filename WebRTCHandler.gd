@@ -296,15 +296,10 @@ func _on_event_received(sub_id: String, event: Dictionary):
 		"join":
 			var ps = _get_or_create_session(from)
 			ps.state = State.SUBSCRIBED
-			var ack = {"type": "join_ack"}
-			_send_signal(ack, from)
 			peer_joined.emit(from)
 			hud("Guest joined: " + from.left(12))
 			call_peer(from)
-		"join_ack":
-			var ps = _get_or_create_session(from)
-			ps.state = State.SUBSCRIBED
-			hud_log("Join ACK from " + from.left(12))
+
 		"offer":
 			var ps = _get_or_create_session(from)
 			if ps.state != State.SUBSCRIBED:

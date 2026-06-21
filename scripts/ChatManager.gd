@@ -78,11 +78,13 @@ func _on_wh_state_changed(state: int) -> void:
 		_start_discover_poll()
 
 		_display_name = _my_pubkey.left(12)
+		var has_native = Engine.has_singleton("NostrCrypto")
+		print("ChatManager: native crypto=", has_native)
 		_register_presence("init")
 		status_label.text = "ルームを検出中..."
 		listening_hint.visible = false
 
-		await get_tree().create_timer(3.0).timeout
+		await get_tree().create_timer(1.0).timeout
 		if not _has_joined:
 			_auto_join()
 		_update_join_status()
@@ -266,7 +268,6 @@ func _become_host() -> void:
 
 	# 他ホスト検出のため kind 0 を再取得
 	var kinds0: Array = [0]
-	NostrGD.CloseSubscription(DISCOVER_SUB_ID)
 	NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
 
 
@@ -283,15 +284,12 @@ func _start_discover_poll() -> void:
 func _on_discover_poll() -> void:
 	print("ChatManager: discover poll")
 	var kinds0: Array = [0]
-	NostrGD.CloseSubscription(DISCOVER_SUB_ID)
 	NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
 	var kinds21000: Array = [21000]
-	NostrGD.CloseSubscription(HOST_SIG_SUB_ID)
 	NostrGD.RequestEventsWithTag(HOST_SIG_SUB_ID, kinds21000, "s", APP_TAG)
 	if _host_pubkey.is_empty() and _subscribed and not _has_joined:
 		status_label.text = "ルームを検出中... (ポーリング)"
 	if _has_joined and _is_host and _host_pubkey == _my_pubkey and _wh.get_connected_peers().size() == 0:
-		# ホストだが誰も接続していない → 他ホストがいないか再確認
 		print("ChatManager: host alone, checking for other hosts...")
 
 

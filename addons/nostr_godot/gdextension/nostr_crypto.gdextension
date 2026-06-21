@@ -3,5 +3,36 @@ entry_symbol = "gdextension_entry"
 compatibility_minimum = "4.1"
 
 [libraries]
-linux.debug.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.so"
-linux.release.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.so"
+# Linux
+linux.debug.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.linux.template_release.x86_64.so"
+linux.debug.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.linux.template_debug.arm64.so"
+linux.release.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.linux.template_release.arm64.so"
+linux.editor.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.linux.template_debug.x86_64.so"
+linux.editor.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.linux.template_debug.arm64.so"
+
+# Windows
+windows.debug.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.windows.template_release.x86_64.dll"
+windows.debug.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.windows.template_debug.arm64.dll"
+windows.release.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.windows.template_release.arm64.dll"
+windows.editor.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.windows.template_debug.x86_64.dll"
+windows.editor.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.windows.template_debug.arm64.dll"
+
+# macOS
+macos.debug.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.macos.template_debug.x86_64.dylib"
+macos.release.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.macos.template_release.x86_64.dylib"
+macos.debug.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.macos.template_debug.arm64.dylib"
+macos.release.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.macos.template_release.arm64.dylib"
+macos.editor.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.macos.template_debug.x86_64.dylib"
+macos.editor.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.macos.template_debug.arm64.dylib"
+
+# Android
+android.debug.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.android.template_debug.x86_64.so"
+android.release.x86_64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.android.template_release.x86_64.so"
+android.debug.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.android.template_debug.arm64.so"
+android.release.arm64 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.android.template_release.arm64.so"
+
+# Web
+web.debug.wasm32 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.web.template_debug.wasm32.wasm"
+web.release.wasm32 = "res://addons/nostr_godot/gdextension/lib/libnostr_crypto.web.template_release.wasm32.wasm"
