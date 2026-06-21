@@ -6,6 +6,8 @@ const DISCOVER_SUB_ID := "sess_discover"
 const HOST_SIG_SUB_ID := "host_sig"
 const SUBSCRIBED_STATE := 2
 
+const Secp256k1 = preload("res://addons/nostr_godot/secp256k1.gd")
+
 var _wh: Node
 var _display_name := ""
 var _my_pubkey := ""
