@@ -11,7 +11,7 @@
 
 # Linux native build
 /build/
-
+builds/
 # GDExtension build artifacts
 addons/nostr_godot/gdextension/build/
 addons/nostr_godot/gdextension/extension_api.json

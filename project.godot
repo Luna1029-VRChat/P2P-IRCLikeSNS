@@ -25,6 +25,7 @@ NostrGD="*res://addons/nostr_godot/nostr_gd_client.gd"
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/stretch/scale=2.0
 
 [dotnet]
 
