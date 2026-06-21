@@ -36,6 +36,10 @@ project/assembly_name="P2P-IRCLikeSNS"
 
 enabled=PackedStringArray()
 
+[native_extensions]
+
+paths=PackedStringArray("res://addons/nostr_godot/gdextension/nostr_crypto.gdextension")
+
 [gui]
 
 theme/custom_font="uid://bonkdea70ejn0"
