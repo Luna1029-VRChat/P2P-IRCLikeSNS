@@ -1,57 +1,67 @@
-# P2P IRC-like SNS
+# P2P IRC-like SNS / Nostr クライアント
 
-A peer-to-peer chat application built with Godot 4 (GDScript), using Nostr relay signaling and WebRTC mesh connections.
+Godot 4 (GDScript) で作られた Nostr クライアント兼 P2P チャットアプリ。
 
-## Architecture
+Nostr リレーで署名・購読し、WebRTC メッシュ接続で P2P チャットを行う。
 
-- **Nostr signaling**: kind-21000 events on a session-based relay for WebRTC signaling
-- **WebRTC mesh**: `webrtc-native` GDNative addon for direct peer-to-peer data channels
-- **Host election**: automatic host promotion when the current host disconnects
-- **Session-scoped relay**: events are auto-purged from the relay on disconnect
+## 機能
 
-## Getting Started
+- Nostr プロトコル対応（kind 1 投稿、kind 0 プロフィール）
+- マルチリレー接続（設定UIで追加・削除可能）
+- グローバルタイムライン表示（最大50件、自動更新）
+- プロフィール管理（表示名・バイオグラフィ）
+- P2P IRC チャット（WebRTC メッシュ + Nostr signaling）
+- ホスト自動昇格（切断時に次の参加者がホストに）
+- Web 書き出し対応（GitHub Pages デプロイ）
 
-### Prerequisites
-- Godot 4.4+ (GL Compatibility renderer)
-- Docker (for local relay)
+## アーキテクチャ
 
-### Run locally
+| 層 | 技術 |
+|---|---|
+| UI | Godot 4.7 Control / GDScript |
+| 署名・鍵管理 | NostrGD アドオン（GDScript + GDExtension / Webでは JS ブリッジ） |
+| リレー通信 | WebSocket |
+| P2P 通信 | WebRTC（IPv6, mesh, DataChannel） |
+| クロスプラットフォーム | Linux, Android, Web (Emscripten) |
+
+## 使い方
+
+### 開発環境
 
 ```bash
-# Start the session-based Nostr relay
+# リレー（Docker）
 cd docker && docker compose up
 
-# Open project.godot in Godot, then run the scene
+# Godot 4.7 で project.godot を開いて実行
 ```
 
-### Production relay
-The app connects to `wss://p2p-nostr.yoinekodo.jp` by default (defined in `scripts/ChatManager.gd`).
-
-## Building for Web
+### Web 書き出し
 
 ```bash
-# Export via Godot Editor → Project → Export → Web
-# Output goes to docs/ for GitHub Pages deployment
+# Godot 4.7 ヘッドレスで書き出し
+godot --headless --export-release "Web"
+
+# 出力先: docs/ （GitHub Pages）
 ```
 
-## Structure
+### ビルド設定
 
-| Path | Description |
+`export_presets.cfg`:
+- Web: `exclude_filter="addons/nostr_godot/gdextension/*"`（Web では GDExtension 除外）
+- PWA: 有効（サービスワーカーが COOP/COEP ヘッダーを追加）
+
+## ディレクトリ構成
+
+| パス | 説明 |
 |---|---|
-| `scripts/ChatManager.gd` | Main session logic, host election, chat send/recv |
-| `WebRTCHandler.gd` | WebRTC/Nostr signaling singleton (autoload) |
-| `addons/nostr_godot/` | NostrGD addon (GDScript + optional GDExtension) |
-| `addons/webrtc-native/` | WebRTC GDNative addon |
-| `docker/` | Session-based Nostr relay (Python) |
-| `ChatScene.tscn` | Main scene |
+| `main.gd` | メインロジック、UI構築、イベント処理 |
+| `scripts/ChatManager.gd` | P2P IRC チャット管理 |
+| `WebRTCHandler.gd` | WebRTC シグナリング（autoload） |
+| `addons/nostr_godot/` | NostrGD アドオン |
+| `addons/webrtc-native/` | WebRTC GDNative |
+| `icons/` | SVG アイコンセット |
+| `docker/` | セッション型 Nostr リレー (Python) |
 
-## Nostr Events
-
-- **kind 21000**: WebRTC signaling (join, offer, answer, ICE candidates)
-- **kind 0**: Profile metadata with `#s="p2p-irc"` tag
-- **kind 1**: Chat messages
-- **sub tag**: `#s="p2p-irc"` on all events for room scoping
-
-## License
+## ライセンス
 
 MIT

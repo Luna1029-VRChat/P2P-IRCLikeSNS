@@ -1,45 +1,52 @@
 # AGENTS.md
 
-## Project Overview
-P2P IRC-style SNS built with Godot 4.x GDScript. Uses Nostr relay signaling (kind 21000 + kind 0 with `#s="p2p-irc"`) and WebRTC mesh connections with host election/promotion. Target: Web export (GitHub Pages).
+## プロジェクト概要
+Godot 4.x GDScript で構築された P2P IRC スタイル SNS。Nostr リレーシグナリング（kind 21000 + kind 0 with `#s="p2p-irc"`）と WebRTC メッシュ接続を使用し、ホスト選出・昇格を行う。ターゲット: Web 書き出し（GitHub Pages）＋ Android ＋ Linux ネイティブ。
 
-## Key Architecture
+## 主要アーキテクチャ
 
-### NostrGD Addon (`addons/nostr_godot/`)
-- Pure GDScript with optional C++ GDExtension (`libnostr_crypto.so`) for secp256k1 acceleration
-- Autoloaded as `NostrGD` via `project.godot`
-- Pre-built `.so` at `addons/nostr_godot/gdextension/lib/libnostr_crypto.so`
-- Submodule: `godot-cpp` at `addons/nostr_godot/gdextension/godot-cpp/`
-- Fallback: pure GDScript crypto via `secp256k1.gd` (~1.3s per sign) when GDExtension unavailable (e.g. Web)
+### NostrGD アドオン（`addons/nostr_godot/`）
+- 純 GDScript + オプションの C++ GDExtension（`libnostr_crypto.so`）で secp256k1 高速化
+- `project.godot` で `NostrGD` として自動ロード
+- プリビルド `.so`: `addons/nostr_godot/gdextension/lib/libnostr_crypto.so`
+- サブモジュール: `addons/nostr_godot/gdextension/godot-cpp/`
+- フォールバック: GDExtension が利用不可の場合（Web 等）は純 GDScript 暗号（`secp256k1.gd`、署名に約1.3秒）
+- Web では JavaScriptBridge（@noble/secp256k1 埋め込み）を使用、署名が高速
 
-### Autoloads (`project.godot`)
+### 自動ロード（`project.godot`）
 - `WebRTCHandler` → `res://WebRTCHandler.gd`
 - `NostrGD` → `res://addons/nostr_godot/nostr_gd_client.gd`
+- `ChatManager` → `res://scripts/ChatManager.gd`
 
-### Signals
-- `NostrGD.EventReceived` emits 2 params: `(subscription_id: String, event_dict: Dictionary)` — no `url` param
-- `WebRTCHandler.state_changed` emits `(new_state: int)`
-- `NostrGD.Connected` emits `(url: String)`
-- `NostrGD.Disconnected` emits `(url: String)`
+### シグナル
+- `NostrGD.EventReceived` → 2引数: `(subscription_id: String, event_dict: Dictionary)` — `url` パラメータなし
+- `WebRTCHandler.state_changed` → `(new_state: int)`
+- `NostrGD.Connected` → `(url: String)`
+- `NostrGD.Disconnected` → `(url: String)`
 
-### Chat Flow
-1. Startup: auto-connect relay, auto-generate keypair (via WebRTCHandler), auto-subscribe
-2. Eavesdrop: read-only timeline via kind 21000 relay broadcast (before "参加")
-3. Join: send kind 0 with `#s="p2p-irc"`, connect WebRTC mesh, send/recv via DataChannel + kind 21000
-4. Host: first joiner is host; on disconnect, next (by `created_at`) is promoted
-5. Relay: session-based (events purged on disconnect)
+### チャットフロー
+1. 起動: リレー自動接続、キーペア自動生成、自動購読
+2. 盗聴: kind 21000 リレー放送による読み取り専用タイムライン（「参加」前）
+3. 参加: kind 0 を `#s="p2p-irc"` 付きで送信、WebRTC メッシュ接続、DataChannel + kind 21000 で送受信
+4. ホスト: 最初の参加者がホスト、切断時は次の（`created_at` 順）参加者が昇格
+5. リレー: セッション型（切断時にイベント消去）
 
-### Relay
-- Production: `wss://p2p-nostr.yoinekodo.jp`
-- Local: `ws://localhost:8080` via `docker compose up` in `docker/`
-- Session-scoped: all events from a pubkey deleted on disconnect
+### リレー
+- 本番: `wss://p2p-nostr.yoinekodo.jp`
+- ローカル: `ws://localhost:8080`（`docker/` で `docker compose up`）
+- セッションスコープ: 切断時に pubkey の全イベントを削除
 
-## Key Decisions
-- Dropped C# because Godot 4 cannot export C# to Web. Pure GDScript + JavaScriptBridge on Web.
-- NostrGD addon is copied directly (not a submodule) to avoid nested path issues with `.gdextension`; only `godot-cpp` is a submodule.
-- `build/`, `docs/`, CMake artifacts, and `libsecp256k1/` are gitignored — regenerate or fetch as needed.
+## 主要な決定事項
+- C# は Godot 4 が Web 書き出しに対応していないため断念。Web では純 GDScript + JavaScriptBridge
+- NostrGD アドオンは直接コピー（サブモジュールではない）。`.gdextension` のネストパス問題を回避。`godot-cpp` のみサブモジュール
+- `build/`、`docs/`、CMake アーティファクト、`libsecp256k1/` は gitignore — 必要に応じて再生成
+- GDExtension wasm による Web 暗号化は断念 — 読み込みが成功しなかった
+- JavaScriptBridge 暗号化: @noble/secp256k1（8KB ESM バンドル）を GDScript 文字列として埋め込み、eval で注入
+- 純 JS の SHA-256 + HMAC-SHA256 実装を埋め込み、noble の同期的 `sign()` をサポート
+- Web 書き出しは `addons/nostr_godot/gdextension/*` を除外
+- `npm run deploy` → Godot ヘッドレス書き出し → `docs/` に出力 → GitHub Pages
 
-## GDExtension Building
+## GDExtension ビルド
 ```bash
 cd addons/nostr_godot/gdextension
 mkdir build && cd build
@@ -48,8 +55,8 @@ make -j$(nproc)
 cp libnostr_crypto.so ../lib/
 ```
 
-## Conventions
-- GDScript, 2-space indent
-- Signal connections via `signal_name.connect(callable)` (not the string-based `connect()`)
-- `snake_case` for variables/functions, `PascalCase` for enums/constants
-- String keys in Dictionaries (no enum keys)
+## コーディング規約
+- GDScript、2スペースインデント
+- シグナル接続は `signal_name.connect(callable)`（文字列ベースの `connect()` は不使用）
+- 変数/関数は `snake_case`、enum/定数は `PascalCase`
+- Dictionary のキーは文字列（enum キーは不使用）

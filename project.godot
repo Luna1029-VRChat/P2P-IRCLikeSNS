@@ -25,8 +25,6 @@ NostrGD="*res://addons/nostr_godot/nostr_gd_client.gd"
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/stretch/scale=2.0
-window/size/scale_2d=2.0
 
 [dotnet]
 
@@ -36,13 +34,13 @@ project/assembly_name="P2P-IRCLikeSNS"
 
 enabled=PackedStringArray()
 
-[native_extensions]
-
-paths=PackedStringArray("res://addons/nostr_godot/gdextension/nostr_crypto.gdextension")
-
 [gui]
 
 theme/custom_font="uid://bonkdea70ejn0"
+
+[native_extensions]
+
+paths=PackedStringArray("res://addons/nostr_godot/gdextension/nostr_crypto.gdextension")
 
 [physics]
 
