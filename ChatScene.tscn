@@ -1,109 +1,105 @@
-[gd_scene load_steps=2 format=3 uid="uid://chat_scene_main"]
+[gd_scene format=3 uid="uid://byw4rmeyhmo42"]
 
-[ext_resource type="Script" path="res://scripts/ChatManager.gd" id="1"]
+[ext_resource type="Script" uid="uid://tks0nfjpmnp" path="res://scripts/ChatManager.gd" id="1"]
 
-[node name="ChatScene" type="Control"]
+[node name="ChatScene" type="Control" unique_id=729605432]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 script = ExtResource("1")
 
-[node name="Bg" type="ColorRect" parent="."]
-anchors_preset = 15
+[node name="Bg" type="ColorRect" parent="." unique_id=246455114]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
 color = Color(0.07, 0.08, 0.09, 1)
 
-[node name="ChatPanel" type="PanelContainer" parent="."]
-anchors_preset = 15
+[node name="ChatPanel" type="PanelContainer" parent="." unique_id=198404386]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
 
-[node name="VBox" type="VBoxContainer" parent="ChatPanel"]
+[node name="VBox" type="VBoxContainer" parent="ChatPanel" unique_id=1981527233]
 layout_mode = 2
 
-[node name="TopBar" type="PanelContainer" parent="ChatPanel/VBox"]
-layout_mode = 2
+[node name="TopBar" type="PanelContainer" parent="ChatPanel/VBox" unique_id=557382303]
 custom_minimum_size = Vector2(0, 44)
-
-[node name="TopHBox" type="HBoxContainer" parent="ChatPanel/VBox/TopBar"]
 layout_mode = 2
 
-[node name="StatusLabel2" type="Label" parent="ChatPanel/VBox/TopBar/TopHBox"]
+[node name="TopHBox" type="HBoxContainer" parent="ChatPanel/VBox/TopBar" unique_id=1298846763]
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(0.5, 0.5, 0.5, 1)
+
+[node name="StatusLabel2" type="Label" parent="ChatPanel/VBox/TopBar/TopHBox" unique_id=867341827]
+layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.5, 0.5, 0.5, 1)
+theme_override_font_sizes/font_size = 12
 
-[node name="HostLabel" type="Label" parent="ChatPanel/VBox/TopBar/TopHBox"]
+[node name="HostLabel" type="Label" parent="ChatPanel/VBox/TopBar/TopHBox" unique_id=439034674]
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 11
 
-[node name="ShowJoinBtn" type="Button" parent="ChatPanel/VBox/TopBar/TopHBox"]
+[node name="ShowJoinBtn" type="Button" parent="ChatPanel/VBox/TopBar/TopHBox" unique_id=411596417]
+visible = false
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 text = "参加"
-visible = false
 
-[node name="ScrollContainer" type="ScrollContainer" parent="ChatPanel/VBox"]
+[node name="ScrollContainer" type="ScrollContainer" parent="ChatPanel/VBox" unique_id=146080380]
 layout_mode = 2
 size_flags_vertical = 3
-horizontal_scroll_mode = 1
 
-[node name="Timeline" type="VBoxContainer" parent="ChatPanel/VBox/ScrollContainer"]
+[node name="Timeline" type="VBoxContainer" parent="ChatPanel/VBox/ScrollContainer" unique_id=1263213690]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="InputArea" type="PanelContainer" parent="ChatPanel/VBox"]
-layout_mode = 2
+[node name="InputArea" type="PanelContainer" parent="ChatPanel/VBox" unique_id=1619539968]
 custom_minimum_size = Vector2(0, 48)
-
-[node name="InputHBox" type="HBoxContainer" parent="ChatPanel/VBox/InputArea"]
 layout_mode = 2
 
-[node name="MessageInput" type="LineEdit" parent="ChatPanel/VBox/InputArea/InputHBox"]
+[node name="InputHBox" type="HBoxContainer" parent="ChatPanel/VBox/InputArea" unique_id=355866682]
+layout_mode = 2
+
+[node name="MessageInput" type="LineEdit" parent="ChatPanel/VBox/InputArea/InputHBox" unique_id=1937968308]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
-custom_minimum_size = Vector2(0, 36)
 placeholder_text = "メッセージを入力..."
 editable = false
 
-[node name="SendBtn" type="Button" parent="ChatPanel/VBox/InputArea/InputHBox"]
-layout_mode = 2
+[node name="SendBtn" type="Button" parent="ChatPanel/VBox/InputArea/InputHBox" unique_id=1044388182]
 custom_minimum_size = Vector2(80, 36)
-text = "送信"
-disabled = true
-
-[node name="ListeningHint" type="Label" parent="ChatPanel/VBox/InputArea/InputHBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+disabled = true
+text = "送信"
+
+[node name="ListeningHint" type="Label" parent="ChatPanel/VBox/InputArea/InputHBox" unique_id=691034191]
+layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.5, 1)
+theme_override_font_sizes/font_size = 11
 text = "（名前を入力して参加すると会話できます）"
 
-[node name="JoinOverlay" type="ColorRect" parent="."]
-anchors_preset = 15
+[node name="JoinOverlay" type="ColorRect" parent="." unique_id=471369016]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0, 0, 0, 0.7)
 mouse_filter = 2
+color = Color(0, 0, 0, 0.7)
 
-[node name="OverlayCloseBtn" type="Button" parent="JoinOverlay"]
-anchors_preset = 6
+[node name="OverlayCloseBtn" type="Button" parent="JoinOverlay" unique_id=1828477686]
+layout_mode = 0
 anchor_left = 1.0
-anchor_top = 0.0
 anchor_right = 1.0
-anchor_bottom = 0.0
 offset_left = -40.0
-offset_right = 0.0
 offset_bottom = 36.0
-text = ""
-flat = true
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+flat = true
 
-[node name="JoinArea" type="VBoxContainer" parent="."]
-anchors_preset = 8
+[node name="JoinArea" type="VBoxContainer" parent="." unique_id=1682673263]
+layout_mode = 0
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
@@ -115,24 +111,24 @@ offset_bottom = 60.0
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Title" type="Label" parent="JoinArea"]
+[node name="Title" type="Label" parent="JoinArea" unique_id=1014548109]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-horizontal_alignment = 1
 text = "P2P IRC"
+horizontal_alignment = 1
 
-[node name="NameInput" type="LineEdit" parent="JoinArea"]
-layout_mode = 2
+[node name="NameInput" type="LineEdit" parent="JoinArea" unique_id=245337027]
 custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
 placeholder_text = "表示名"
 
-[node name="JoinBtn" type="Button" parent="JoinArea"]
-layout_mode = 2
+[node name="JoinBtn" type="Button" parent="JoinArea" unique_id=53963251]
 custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
 text = "参加"
 
-[node name="StatusLabel" type="Label" parent="JoinArea"]
+[node name="StatusLabel" type="Label" parent="JoinArea" unique_id=428055210]
 layout_mode = 2
-horizontal_alignment = 1
 theme_override_colors/font_color = Color(0.5, 0.5, 0.5, 1)
 text = "リレーに接続中..."
+horizontal_alignment = 1

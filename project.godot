@@ -21,6 +21,13 @@ config/icon="res://icon.svg"
 WebRTCHandler="*res://WebRTCHandler.gd"
 NostrGD="*res://addons/nostr_godot/nostr_gd_client.gd"
 
+[display]
+
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/stretch/scale=2.0
+window/size/scale_2d=2.0
+
 [dotnet]
 
 project/assembly_name="P2P-IRCLikeSNS"
@@ -44,10 +51,6 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 
-[display]
-window/size/scale_2d=2.0
-window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
-
 [web]
+
 canvas/export/embed_icon_in_html=true

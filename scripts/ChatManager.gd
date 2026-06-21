@@ -113,7 +113,10 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 	if role == "host" and pubkey != _my_pubkey:
 		if _is_host:
 			var other_ts = ev.get("created_at", 0)
-			if _host_since > 0 and other_ts > 0 and _host_since < other_ts:
+			var i_should_remain := _host_since > 0 and other_ts > 0 and _host_since <= other_ts
+			if _host_since > 0 and other_ts > 0 and _host_since == other_ts:
+				i_should_remain = _my_pubkey < pubkey
+			if i_should_remain:
 				return
 			_is_host = false
 			_add_system_message("別のホストを検出したためゲストに変更します")
@@ -199,6 +202,11 @@ func _become_host() -> void:
 	_add_system_message("あなたがホストになりました")
 	_update_status_bar()
 	_update_join_status()
+
+	# 他ホスト検出のため kind 0 を再取得
+	var kinds0: Array = [0]
+	NostrGD.CloseSubscription(DISCOVER_SUB_ID)
+	NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
 
 
 func _become_guest() -> void:
