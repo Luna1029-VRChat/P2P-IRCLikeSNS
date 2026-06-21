@@ -14,6 +14,7 @@ class PeerSession:
 	var file_recv: Dictionary = {}
 
 const SIGNAL_KIND := 21000
+const APP_TAG := "p2p-irc"
 
 var state: int = State.IDLE
 var relay_url := ""
@@ -205,7 +206,7 @@ const FILE_CHUNK_SIZE := 16384
 var hud_label: Label
 
 func _send_signal(msg: Dictionary, target_pubkey: String):
-	var tags: Array = [["p", target_pubkey]]
+	var tags: Array = [["p", target_pubkey], ["s", APP_TAG]]
 	NostrGD.SendCustomEvent(SIGNAL_KIND, JSON.stringify(msg), tags)
 
 func _get_or_create_session(pubkey: String) -> PeerSession:
@@ -250,7 +251,7 @@ func _on_relay_connected(url: String):
 		hud_log("Relay connected: " + my_pubkey.left(12))
 		_sig_sub_id = "sig_" + my_pubkey.left(8)
 		var kinds: Array = [SIGNAL_KIND]
-		NostrGD.RequestCustomEvents(_sig_sub_id, kinds, my_pubkey)
+		NostrGD.RequestEventsWithTag(_sig_sub_id, kinds, "s", APP_TAG)
 		state = State.SUBSCRIBED
 		state_changed.emit(state)
 
@@ -269,6 +270,18 @@ func _on_event_received(sub_id: String, event: Dictionary):
 	if kind != SIGNAL_KIND:
 		return
 	var from = event.get("pubkey", "")
+	if from == my_pubkey:
+		return
+	# クライアント側で #p タグをフィルタ（リレーが #s 購読しかサポートしない場合の対策）
+	var tags: Array = event.get("tags", [])
+	var is_for_me := false
+	for t in tags:
+		if t is Array and t.size() >= 2 and t[0] == "p" and t[1] == my_pubkey:
+			is_for_me = true
+			break
+	if not is_for_me:
+		hud_log("Skip signal not for me from " + from.left(12))
+		return
 	var content = event.get("content", "")
 	var json = JSON.new()
 	if json.parse(content) != OK:
