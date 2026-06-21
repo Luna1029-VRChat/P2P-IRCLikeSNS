@@ -16,6 +16,7 @@ var _discover_events: Array = []
 var _subscribed := false
 var _join_order: Array = []
 var _host_since := 0
+var _discover_timer: Timer = null
 
 @onready var join_overlay: ColorRect = $JoinOverlay
 @onready var overlay_close_btn: Button = $JoinOverlay/OverlayCloseBtn
@@ -73,6 +74,8 @@ func _on_wh_state_changed(state: int) -> void:
 
 		var kinds21000: Array = [21000]
 		NostrGD.RequestEventsWithTag(HOST_SIG_SUB_ID, kinds21000, "s", APP_TAG)
+
+		_start_discover_poll()
 
 		_display_name = _my_pubkey.left(12)
 		_register_presence("init")
@@ -262,6 +265,31 @@ func _become_host() -> void:
 	var kinds0: Array = [0]
 	NostrGD.CloseSubscription(DISCOVER_SUB_ID)
 	NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
+
+
+func _start_discover_poll() -> void:
+	if _discover_timer:
+		_discover_timer.stop()
+	_discover_timer = Timer.new()
+	_discover_timer.wait_time = 5.0
+	_discover_timer.one_shot = false
+	_discover_timer.timeout.connect(_on_discover_poll)
+	add_child(_discover_timer)
+	_discover_timer.start()
+
+func _on_discover_poll() -> void:
+	print("ChatManager: discover poll")
+	var kinds0: Array = [0]
+	NostrGD.CloseSubscription(DISCOVER_SUB_ID)
+	NostrGD.RequestEventsWithTag(DISCOVER_SUB_ID, kinds0, "s", APP_TAG)
+	var kinds21000: Array = [21000]
+	NostrGD.CloseSubscription(HOST_SIG_SUB_ID)
+	NostrGD.RequestEventsWithTag(HOST_SIG_SUB_ID, kinds21000, "s", APP_TAG)
+	if _host_pubkey.is_empty() and _subscribed and not _has_joined:
+		status_label.text = "ルームを検出中... (ポーリング)"
+	if _has_joined and _is_host and _host_pubkey == _my_pubkey and _wh.get_connected_peers().size() == 0:
+		# ホストだが誰も接続していない → 他ホストがいないか再確認
+		print("ChatManager: host alone, checking for other hosts...")
 
 
 func _become_guest() -> void:
