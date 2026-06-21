@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1782006930|3472026';
+const CACHE_VERSION = '1782007268|3571786';
 /** @type {string} */
 const CACHE_PREFIX = 'P2P-IRCLikeSNS-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
