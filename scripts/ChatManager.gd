@@ -1,6 +1,6 @@
 extends Control
 
-const RELAY_URL := "wss://p2p-nostr.yoinekodo.jp"
+const RELAY_URL := "ws://192.168.43.39:8080"
 const APP_TAG := "p2p-irc"
 const DISCOVER_SUB_ID := "sess_discover"
 const HOST_SIG_SUB_ID := "host_sig"
