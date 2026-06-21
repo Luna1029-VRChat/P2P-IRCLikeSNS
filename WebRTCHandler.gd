@@ -263,7 +263,7 @@ func _on_relay_disconnected(url: String):
 		state_changed.emit(state)
 
 func _on_event_received(sub_id: String, event: Dictionary):
-	if sub_id != _sig_sub_id:
+	if sub_id != _sig_sub_id and sub_id != "_":
 		return
 	var kind = event.get("kind", 0)
 	if kind != SIGNAL_KIND:

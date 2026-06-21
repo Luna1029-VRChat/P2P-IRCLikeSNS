@@ -14,6 +14,7 @@ var _host_pubkey := ""
 var _discover_events: Array = []
 var _subscribed := false
 var _join_order: Array = []
+var _host_since := 0
 
 @onready var join_overlay: ColorRect = $JoinOverlay
 @onready var overlay_close_btn: Button = $JoinOverlay/OverlayCloseBtn
@@ -86,7 +87,7 @@ func _on_wh_state_changed(state: int) -> void:
 func _on_nostr_event_received(sub_id: String, ev: Dictionary) -> void:
 	var kind = ev.get("kind", 0)
 
-	if sub_id == DISCOVER_SUB_ID and kind == 0:
+	if (sub_id == DISCOVER_SUB_ID or sub_id == "_") and kind == 0:
 		_discover_events.append(ev.duplicate())
 		_process_discover_event(ev, false)
 
@@ -110,6 +111,13 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 	var name = str(data.get("name", pubkey.left(12)))
 
 	if role == "host" and pubkey != _my_pubkey:
+		if _is_host:
+			var other_ts = ev.get("created_at", 0)
+			if _host_since > 0 and other_ts > 0 and _host_since < other_ts:
+				return
+			_is_host = false
+			_add_system_message("別のホストを検出したためゲストに変更します")
+			_wh.join_host(pubkey)
 		_host_pubkey = pubkey
 		_add_system_message("ホスト検出: " + name + " (" + pubkey.left(12) + ")")
 		_update_status_bar()
@@ -135,12 +143,10 @@ func _auto_join() -> void:
 	else:
 		_become_guest()
 
-	join_overlay.visible = false
-	join_area.visible = false
 	show_join_btn.visible = true
 	message_input.editable = true
 	send_btn.disabled = false
-	join_btn.text = "変更"
+	join_btn.text = "参加"
 	_update_join_status()
 
 
@@ -176,6 +182,7 @@ func _on_join_pressed() -> void:
 func _become_host() -> void:
 	_is_host = true
 	_host_pubkey = _my_pubkey
+	_host_since = Time.get_unix_time_from_system()
 	print("ChatManager: Become host")
 
 	var content_dict := {
@@ -274,6 +281,7 @@ func _handle_host_disconnected() -> void:
 func _promote_to_host() -> void:
 	_is_host = true
 	_host_pubkey = _my_pubkey
+	_host_since = Time.get_unix_time_from_system()
 	print("ChatManager: Promoted to host!")
 
 	var content_dict := {
