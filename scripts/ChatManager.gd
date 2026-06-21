@@ -7,7 +7,10 @@ const HOST_SIG_SUB_ID := "host_sig"
 const SUBSCRIBED_STATE := 2
 
 const Secp256k1 = preload("res://addons/nostr_godot/secp256k1.gd")
+const MOBILE_BREAKPOINT := 600
+const BTN_MIN_H := 44
 
+var _is_mobile := false
 var _wh: Node
 var _display_name := ""
 var _my_pubkey := ""
@@ -63,6 +66,71 @@ func _ready() -> void:
 	NostrGD.EventReceived.connect(_on_nostr_event_received)
 
 	_wh.connect_to_relay(RELAY_URL)
+
+	_check_mobile()
+	get_viewport().size_changed.connect(_check_mobile)
+	message_input.focus_entered.connect(func():
+		if _is_mobile:
+			await get_tree().create_timer(0.3).timeout
+			_scroll_to_bottom()
+	)
+
+
+func _focus_input() -> void:
+	message_input.grab_focus()
+
+var _last_vp_h: float = 0
+
+func _check_mobile() -> void:
+	_is_mobile = get_viewport().size.x < MOBILE_BREAKPOINT
+	var vp_h: float = get_viewport().size.y
+	if _last_vp_h > 0 and _is_mobile and vp_h < _last_vp_h * 0.8:
+		var diff: float = _last_vp_h - vp_h
+		$ChatPanel/VBox/InputArea.offset_bottom = -diff
+	elif _is_mobile:
+		$ChatPanel/VBox/InputArea.offset_bottom = 0
+	_last_vp_h = vp_h
+	if _is_mobile:
+		var vp_w: float = get_viewport().size.x
+		var margin: int = mini(24, int(vp_w * 0.08))
+		join_area.offset_left = margin
+		join_area.offset_right = -margin
+		join_area.offset_top = -80
+		join_area.offset_bottom = 80
+		overlay_close_btn.offset_left = -48
+		overlay_close_btn.custom_minimum_size = Vector2(48, 48)
+		$JoinArea/Title.add_theme_font_size_override("font_size", 24)
+		status_label.add_theme_font_size_override("font_size", 13)
+		name_input.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		join_btn.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		join_btn.add_theme_font_size_override("font_size", 16)
+		$ChatPanel/VBox/TopBar/TopHBox/HostLabel.visible = false
+		$ChatPanel/VBox/TopBar.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		$ChatPanel/VBox/TopBar/TopHBox/ShowJoinBtn.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		$ChatPanel/VBox/InputArea.custom_minimum_size = Vector2(0, BTN_MIN_H + 8)
+		message_input.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		message_input.add_theme_font_size_override("font_size", 16)
+		send_btn.custom_minimum_size = Vector2(80, BTN_MIN_H)
+		send_btn.add_theme_font_size_override("font_size", 15)
+	else:
+		join_area.offset_left = -160
+		join_area.offset_right = 160
+		join_area.offset_top = -60
+		join_area.offset_bottom = 60
+		overlay_close_btn.offset_left = -40
+		overlay_close_btn.custom_minimum_size = Vector2(40, 40)
+		$JoinArea/Title.add_theme_font_size_override("font_size", 20)
+		status_label.add_theme_font_size_override("font_size", 12)
+		name_input.custom_minimum_size = Vector2(0, 36)
+		join_btn.custom_minimum_size = Vector2(0, 40)
+		join_btn.add_theme_font_size_override("font_size", 14)
+		$ChatPanel/VBox/TopBar.custom_minimum_size = Vector2(0, 44)
+		$ChatPanel/VBox/TopBar/TopHBox/ShowJoinBtn.custom_minimum_size = Vector2(0, 36)
+		$ChatPanel/VBox/InputArea.custom_minimum_size = Vector2(0, 48)
+		message_input.custom_minimum_size = Vector2(0, 36)
+		message_input.add_theme_font_size_override("font_size", 14)
+		send_btn.custom_minimum_size = Vector2(80, 36)
+		send_btn.add_theme_font_size_override("font_size", 13)
 
 
 func _on_wh_state_changed(state: int) -> void:
@@ -210,6 +278,7 @@ func _auto_join() -> void:
 	send_btn.disabled = false
 	join_btn.text = "参加"
 	_update_join_status()
+	call_deferred("_focus_input")
 
 
 func _on_overlay_close_pressed() -> void:
@@ -435,23 +504,21 @@ func _add_chat_message(name: String, content: String, pubkey: String, timestamp:
 		color = Color(1.0, 0.8, 0.2)
 
 	var panel := PanelContainer.new()
+	var vbox := VBoxContainer.new()
+	panel.add_child(vbox)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
 	var hbox := HBoxContainer.new()
-	panel.add_child(hbox)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
-	hbox.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(hbox)
 
 	var name_label := Label.new()
 	name_label.text = name
-	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.add_theme_font_size_override("font_size", 14 if _is_mobile else 13)
 	name_label.add_theme_color_override("font_color", color)
-	name_label.custom_minimum_size = Vector2(100, 0)
+	name_label.custom_minimum_size = Vector2(80 if _is_mobile else 100, 0)
 	hbox.add_child(name_label)
-
-	var msg_label := Label.new()
-	msg_label.text = content
-	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg_label.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
-	hbox.add_child(msg_label)
 
 	var time_label := Label.new()
 	var dt := Time.get_datetime_dict_from_unix_time(timestamp)
@@ -459,6 +526,15 @@ func _add_chat_message(name: String, content: String, pubkey: String, timestamp:
 	time_label.add_theme_font_size_override("font_size", 10)
 	time_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	hbox.add_child(time_label)
+	hbox.alignment = BoxContainer.ALIGNMENT_END
+
+	var msg_label := Label.new()
+	msg_label.text = content
+	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if _is_mobile:
+		msg_label.add_theme_font_size_override("font_size", 15)
+	vbox.add_child(msg_label)
 
 	timeline.add_child(panel)
 	_scroll_to_bottom()
@@ -468,7 +544,7 @@ func _add_system_message(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_font_size_override("font_size", 12 if _is_mobile else 11)
 	label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	label.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
 	timeline.add_child(label)
@@ -515,4 +591,9 @@ func _update_status_bar() -> void:
 		role_text = "未参加"
 	var peer_count = _wh.get_connected_peers().size()
 	status_label2.text = role_text + " | 接続: " + str(peer_count)
-	host_label.text = "" if _host_pubkey.is_empty() else "host: " + _host_pubkey.left(12)
+	status_label2.add_theme_font_size_override("font_size", 11 if _is_mobile else 12)
+	if _is_mobile:
+		host_label.visible = false
+	else:
+		host_label.visible = true
+		host_label.text = "" if _host_pubkey.is_empty() else "host: " + _host_pubkey.left(12)
