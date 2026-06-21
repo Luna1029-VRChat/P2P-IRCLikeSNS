@@ -1,6 +1,6 @@
 extends Control
 
-const RELAY_URL := "ws://192.168.43.39:8080"
+const RELAY_URL := "wss://p2p-nostr.yoinekodo.jp"
 const APP_TAG := "p2p-irc"
 const DISCOVER_SUB_ID := "sess_discover"
 const HOST_SIG_SUB_ID := "host_sig"
@@ -313,6 +313,8 @@ func _become_guest() -> void:
 
 func _on_data_channel_opened(_dc, peer_pubkey: String) -> void:
 	print("ChatManager: DC opened with ", peer_pubkey.left(12))
+	if _discover_timer:
+		_discover_timer.stop()
 	if _is_host and not _join_order.has(peer_pubkey):
 		_join_order.append(peer_pubkey)
 	_add_system_message("P2P接続: " + peer_pubkey.left(12))
