@@ -124,7 +124,7 @@ case "$PLATFORM-$ARCH" in
         LIB_SUFFIX=".wasm"
         SCONS_PLATFORM="web"
         SCONS_ARCH="wasm32"
-        SCONS_TOOLCHAIN=""
+        SCONS_TOOLCHAIN="threads=yes"
         SECP_CMAKE_EXTRA="-DCMAKE_SYSTEM_NAME=Emscripten -DCMAKE_SYSTEM_PROCESSOR=wasm32 -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX -DCMAKE_AR=$AR -DBUILD_TESTING=OFF -DSECP256K1_ENABLE_MODULE_MUSIG=OFF -DSECP256K1_ENABLE_MODULE_ELLSWIFT=OFF"
         ;;
     android-arm64)
@@ -274,6 +274,9 @@ CXXFLAGS="-fPIC -std=c++17"
 if [ "$PLATFORM" = "windows" ]; then
     CXXFLAGS="$CXXFLAGS -DSECP256K1_STATIC"
 fi
+if [ "$PLATFORM" = "web" ]; then
+    CXXFLAGS="$CXXFLAGS -pthread -sSHARED_MEMORY=1 -sUSE_PTHREADS=1"
+fi
 $CXX -c $CXXFLAGS \
     -I godot-cpp/include \
     -I godot-cpp/gen/include \
@@ -314,7 +317,8 @@ case "$PLATFORM" in
             "$SECP_LIB" \
             "$GODOT_CPP_LIB" \
             -sSIDE_MODULE=1 \
-            -sWASM_BIGINT
+            -sWASM_BIGINT \
+            -pthread -sSHARED_MEMORY=1
         ;;
 esac
 
