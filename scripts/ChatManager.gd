@@ -235,7 +235,9 @@ func _on_join_pressed() -> void:
 		_add_system_message("名前変更: " + _display_name)
 
 	_update_join_status()
+	join_overlay.visible = false
 	join_area.visible = false
+	show_join_btn.visible = true
 
 
 func _become_host() -> void:
