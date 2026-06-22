@@ -26,10 +26,23 @@ Godot 4.x GDScript で構築された P2P IRC スタイル SNS。Nostr リレー
 
 ### チャットフロー
 1. 起動: リレー自動接続、キーペア自動生成、自動購読
-2. 盗聴: kind 21000 リレー放送による読み取り専用タイムライン（「参加」前）
-3. 参加: kind 0 を `#s="p2p-irc"` 付きで送信、WebRTC メッシュ接続、DataChannel + kind 21000 で送受信
-4. ホスト: 最初の参加者がホスト、切断時は次の（`created_at` 順）参加者が昇格
-5. リレー: セッション型（切断時にイベント消去）
+2. 検出: kind 0 `#s="p2p-irc"` で既存参加者を検出（`_is_stale_event` は自分以外の pubkey では無視）
+3. 参加: 既存ホストがいれば `join`（kind 21000, `#p`+`#s`）を送信 → WebRTC 接続。いなければ自分がホストに
+4. ホスト復帰: ホスト変更時はゲストが再 `join` を送信（`_on_host_signal_received` / `_process_discover_event`）
+5. ホスト昇格: 切断時は次の（`created_at` 順）参加者が昇格
+6. リレー: セッション型（切断時にイベント消去）
+
+### WebRTC（`addons/webrtc-native/`）
+- Linux/Android/iOS/Windows では `webrtc-native` GDExtension（libdatachannel ベース）を使用
+- `project.godot` の `[native_extensions]` に登録
+- Web エクスポート時は除外（wasm 非対応。ブラウザ内蔵 WebRTC を使用）
+- STUN: `stun.l.google.com:19302`, `stun1.l.google.com:19302`（IPv4/IPv6 デュアルスタック）
+- IPv4 ICE 候補フィルタリングは行わない
+
+### UI スケール
+- `window/stretch/scale=2.0`, mode=`canvas_items`, aspect=`expand`
+- すべてのフォントサイズ・レイアウトサイズはこの 2x スケール前提で設計
+- モバイル判定: ビューポート幅 300px 未満（実効解像度ベース）
 
 ### リレー
 - 本番: `wss://p2p-nostr.yoinekodo.jp`
@@ -44,7 +57,11 @@ Godot 4.x GDScript で構築された P2P IRC スタイル SNS。Nostr リレー
 - JavaScriptBridge 暗号化: @noble/secp256k1（8KB ESM バンドル）を GDScript 文字列として埋め込み、eval で注入
 - 純 JS の SHA-256 + HMAC-SHA256 実装を埋め込み、noble の同期的 `sign()` をサポート
 - Web 書き出しは `addons/nostr_godot/gdextension/*` を除外
+- Web 書き出しは `addons/webrtc-native/*` も除外（wasm 未対応。ブラウザ内蔵 WebRTC を使用）
 - `npm run deploy` → Godot ヘッドレス書き出し → `docs/` に出力 → GitHub Pages
+- `webrtc-native` GDExtension はネイティブプラットフォームでのみ有効（`project.godot` の `native_extensions` に登録）
+- `_is_stale_event` は自分以外の pubkey では常に `false` を返す（既存参加者のイベントを誤って無視しないため）
+- `join` イベントの受信は `p` タグチェックをスキップ（ホストが変わった後の再参加を許容）
 
 ## GDExtension ビルド
 ```bash
