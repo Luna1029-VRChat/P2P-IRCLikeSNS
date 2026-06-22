@@ -272,16 +272,6 @@ func _on_event_received(sub_id: String, event: Dictionary):
 	var from = event.get("pubkey", "")
 	if from == my_pubkey:
 		return
-	# クライアント側で #p タグをフィルタ（リレーが #s 購読しかサポートしない場合の対策）
-	var tags: Array = event.get("tags", [])
-	var is_for_me := false
-	for t in tags:
-		if t is Array and t.size() >= 2 and t[0] == "p" and t[1] == my_pubkey:
-			is_for_me = true
-			break
-	if not is_for_me:
-		hud_log("Skip signal not for me from " + from.left(12))
-		return
 	var content = event.get("content", "")
 	var json = JSON.new()
 	if json.parse(content) != OK:
@@ -289,15 +279,28 @@ func _on_event_received(sub_id: String, event: Dictionary):
 	var msg = json.get_data()
 	if not msg is Dictionary:
 		return
-
 	var msg_type = msg.get("type", "")
 	hud_log("Event: " + msg_type + " from " + from.left(12))
+
+	# join は p タグ不要（新しいホスト宛に送られてくるため）
+	if msg_type != "join":
+		var tags: Array = event.get("tags", [])
+		var is_for_me := false
+		for t in tags:
+			if t is Array and t.size() >= 2 and t[0] == "p" and t[1] == my_pubkey:
+				is_for_me = true
+				break
+		if not is_for_me:
+			hud_log("Skip signal not for me from " + from.left(12))
+			return
+
 	match msg_type:
 		"join":
 			var ps = _get_or_create_session(from)
 			ps.state = State.SUBSCRIBED
 			peer_joined.emit(from)
 			hud("Guest joined: " + from.left(12))
+			print("WebRTCHandler: join from ", from.left(12), " → calling peer")
 			call_peer(from)
 
 		"offer":
@@ -305,29 +308,23 @@ func _on_event_received(sub_id: String, event: Dictionary):
 			if ps.state != State.SUBSCRIBED:
 				return
 			ps.state = State.CALLING
-			hud_log("Got offer, starting WebRTC...")
+			print("WebRTCHandler: Got offer from ", from.left(12), ", starting WebRTC...")
 			if not _start_webrtc(ps, false):
 				ps.state = State.IDLE
 				return
 			if ps.pc:
-				var filtered_sdp := _filter_ipv4_from_sdp(msg.get("sdp", ""))
-				ps.pc.set_remote_description("offer", filtered_sdp)
+				ps.pc.set_remote_description("offer", msg.get("sdp", ""))
 				_flush_pending_ice(ps)
 		"answer":
 			var ps = peers.get(from)
 			if not ps or not ps.pc:
 				return
-			hud_log("Got answer, setting remote desc")
-			var filtered_sdp := _filter_ipv4_from_sdp(msg.get("sdp", ""))
-			ps.pc.set_remote_description("answer", filtered_sdp)
+			print("WebRTCHandler: Got answer from ", from.left(12), ", setting remote desc")
+			ps.pc.set_remote_description("answer", msg.get("sdp", ""))
 			_flush_pending_ice(ps)
 		"ice":
 			var ps = peers.get(from)
 			if not ps or not ps.pc:
-				return
-			var candidate = str(msg.get("candidate", ""))
-			if _is_ipv4_candidate(candidate):
-				hud_log("Filtered received IPv4 candidate")
 				return
 			ps.ice_rcvd += 1
 			ps.pending_ice.append(msg.duplicate())
@@ -339,19 +336,22 @@ func _start_webrtc(ps: PeerSession, initiator: bool) -> bool:
 	ps.pc.session_description_created.connect(func(p_type, p_sdp): _on_sdp_created(ps, p_type, p_sdp))
 	ps.pc.ice_candidate_created.connect(func(mid, index, cand): _on_ice_candidate(ps, mid, index, cand))
 	var result = ps.pc.initialize({
-		"ice_servers": [{
-			"urls": ["stun:stun.ipv6.google.com:19302"]
-		}]
+		"ice_servers": [
+			{"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]}
+		]
 	})
 	if result != OK:
 		push_error("WebRTC init failed for ", ps.pubkey.left(12))
 		return false
+	else:
+		print("WebRTCHandler: WebRTC init OK for ", ps.pubkey.left(12), " initiator=", initiator)
 
 	if initiator:
 		ps.dc = ps.pc.create_data_channel("game")
 		if ps.dc == null:
 			push_error("Failed to create data channel for ", ps.pubkey.left(12))
 			return false
+		print("WebRTCHandler: DC created, creating offer for ", ps.pubkey.left(12))
 		ps.pc.create_offer()
 	else:
 		ps.pc.data_channel_received.connect(func(ch): _on_dc_received(ps, ch))
@@ -361,34 +361,23 @@ func _flush_pending_ice(ps: PeerSession):
 	if ps.pc == null:
 		return
 	for msg in ps.pending_ice:
-		var candidate = str(msg.get("candidate", ""))
-		if _is_ipv4_candidate(candidate):
-			continue
-		ps.pc.add_ice_candidate(msg.get("mid", ""), msg.get("mlineIndex", 0), candidate)
+		ps.pc.add_ice_candidate(msg.get("mid", ""), msg.get("mlineIndex", 0), str(msg.get("candidate", "")))
 	ps.pending_ice.clear()
 
 func _on_sdp_created(ps: PeerSession, p_type: String, p_sdp: String):
-	var filtered_sdp := _filter_ipv4_from_sdp(p_sdp)
-	ps.pc.set_local_description(p_type, filtered_sdp)
+	print("WebRTCHandler: SDP created type=", p_type, " for ", ps.pubkey.left(12))
+	ps.pc.set_local_description(p_type, p_sdp)
 	_flush_pending_ice(ps)
-	var msg = {"type": p_type, "sdp": filtered_sdp}
+	var msg = {"type": p_type, "sdp": p_sdp}
 	_send_signal(msg, ps.pubkey)
 
 
 func _filter_ipv4_from_sdp(sdp: String) -> String:
-	var lines := sdp.split("\n")
-	var filtered := []
-	for line in lines:
-		if line.begins_with("a=candidate:") and _is_ipv4_candidate(line):
-			continue
-		filtered.append(line)
-	return "\n".join(filtered)
+	return sdp
 
 func _on_ice_candidate(ps: PeerSession, mid: String, index: int, candidate: String) -> void:
 	ps.ice_sent += 1
-	if _is_ipv4_candidate(candidate):
-		hud_log("Filtered IPv4 candidate: " + candidate.left(50))
-		return
+	hud_log("ICE sent: " + candidate.left(80))
 	var msg = {"type": "ice", "candidate": candidate, "mid": mid, "mlineIndex": index}
 	_send_signal(msg, ps.pubkey)
 
@@ -490,7 +479,7 @@ func _process(delta):
 			var rs = ps.dc.get_ready_state()
 			if rs == WebRTCDataChannel.STATE_OPEN and ps.state == State.CALLING:
 				ps.state = State.CONNECTED
-				hud_log("DC OPEN for " + pubkey.left(12))
+				print("WebRTCHandler: DC OPEN for ", pubkey.left(12))
 				data_channel_opened.emit(ps.dc, pubkey)
 			elif rs == WebRTCDataChannel.STATE_CLOSED and ps.state not in [State.CALLING, State.CONNECTED]:
 				to_remove.append(pubkey)

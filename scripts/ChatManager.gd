@@ -7,7 +7,10 @@ const HOST_SIG_SUB_ID := "host_sig"
 const SUBSCRIBED_STATE := 2
 
 const Secp256k1 = preload("res://addons/nostr_godot/secp256k1.gd")
+const MOBILE_BREAKPOINT := 300
+const BTN_MIN_H := 22
 
+var _is_mobile := false
 var _wh: Node
 var _display_name := ""
 var _my_pubkey := ""
@@ -18,6 +21,8 @@ var _discover_events: Array = []
 var _subscribed := false
 var _join_order: Array = []
 var _host_since := 0
+var _session_start_time: int = 0
+var _guest_connect_timer: Timer = null
 var _discover_timer: Timer = null
 
 @onready var join_overlay: ColorRect = $JoinOverlay
@@ -62,12 +67,84 @@ func _ready() -> void:
 
 	NostrGD.EventReceived.connect(_on_nostr_event_received)
 
+	_guest_connect_timer = Timer.new()
+	_guest_connect_timer.wait_time = 10.0
+	_guest_connect_timer.one_shot = true
+	_guest_connect_timer.timeout.connect(_on_guest_connect_timeout)
+	add_child(_guest_connect_timer)
+
 	_wh.connect_to_relay(RELAY_URL)
+
+	_check_mobile()
+	get_viewport().size_changed.connect(_check_mobile)
+	message_input.focus_entered.connect(func():
+		if _is_mobile:
+			await get_tree().create_timer(0.3).timeout
+			_scroll_to_bottom()
+	)
+
+
+func _focus_input() -> void:
+	message_input.grab_focus()
+
+var _last_vp_h: float = 0
+
+func _check_mobile() -> void:
+	_is_mobile = get_viewport().size.x < MOBILE_BREAKPOINT
+	var vp_h: float = get_viewport().size.y
+	if _last_vp_h > 0 and _is_mobile and vp_h < _last_vp_h * 0.8:
+		var diff: float = _last_vp_h - vp_h
+		$ChatPanel/VBox/InputArea.offset_bottom = -diff
+	elif _is_mobile:
+		$ChatPanel/VBox/InputArea.offset_bottom = 0
+	_last_vp_h = vp_h
+	if _is_mobile:
+		var vp_w: float = get_viewport().size.x
+		var margin: int = mini(20, int(vp_w * 0.08))
+		join_area.offset_left = margin
+		join_area.offset_right = -margin
+		join_area.offset_top = -60
+		join_area.offset_bottom = 60
+		overlay_close_btn.offset_left = -40
+		overlay_close_btn.custom_minimum_size = Vector2(40, 40)
+		$JoinArea/Title.add_theme_font_size_override("font_size", 18)
+		status_label.add_theme_font_size_override("font_size", 10)
+		name_input.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		join_btn.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		join_btn.add_theme_font_size_override("font_size", 12)
+		$ChatPanel/VBox/TopBar/TopHBox/HostLabel.visible = false
+		$ChatPanel/VBox/TopBar.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		$ChatPanel/VBox/TopBar/TopHBox/ShowJoinBtn.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		$ChatPanel/VBox/InputArea.custom_minimum_size = Vector2(0, BTN_MIN_H + 8)
+		message_input.custom_minimum_size = Vector2(0, BTN_MIN_H)
+		message_input.add_theme_font_size_override("font_size", 12)
+		send_btn.custom_minimum_size = Vector2(60, BTN_MIN_H)
+		send_btn.add_theme_font_size_override("font_size", 11)
+	else:
+		join_area.offset_left = -120
+		join_area.offset_right = 120
+		join_area.offset_top = -48
+		join_area.offset_bottom = 48
+		overlay_close_btn.offset_left = -32
+		overlay_close_btn.custom_minimum_size = Vector2(32, 32)
+		$JoinArea/Title.add_theme_font_size_override("font_size", 16)
+		status_label.add_theme_font_size_override("font_size", 10)
+		name_input.custom_minimum_size = Vector2(0, 28)
+		join_btn.custom_minimum_size = Vector2(0, 32)
+		join_btn.add_theme_font_size_override("font_size", 11)
+		$ChatPanel/VBox/TopBar.custom_minimum_size = Vector2(0, 32)
+		$ChatPanel/VBox/TopBar/TopHBox/ShowJoinBtn.custom_minimum_size = Vector2(0, 28)
+		$ChatPanel/VBox/InputArea.custom_minimum_size = Vector2(0, 36)
+		message_input.custom_minimum_size = Vector2(0, 28)
+		message_input.add_theme_font_size_override("font_size", 11)
+		send_btn.custom_minimum_size = Vector2(60, 28)
+		send_btn.add_theme_font_size_override("font_size", 11)
 
 
 func _on_wh_state_changed(state: int) -> void:
 	if state == SUBSCRIBED_STATE and not _subscribed:
 		_subscribed = true
+		_session_start_time = Time.get_unix_time_from_system()
 		_my_pubkey = NostrGD.GetPublicKeyHex()
 		print("ChatManager: Relay subscribed, pubkey=", _my_pubkey.left(12))
 
@@ -107,7 +184,15 @@ func _on_nostr_event_received(sub_id: String, ev: Dictionary) -> void:
 		_on_host_signal_received(ev)
 
 
+func _is_stale_event(ev: Dictionary) -> bool:
+	var pk = str(ev.get("pubkey", ""))
+	if pk == _my_pubkey:
+		return _session_start_time > 0 and int(ev.get("created_at", 0)) < _session_start_time
+	return false
+
 func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
+	if _is_stale_event(ev):
+		return
 	var content = str(ev.get("content", ""))
 	var pubkey = str(ev.get("pubkey", ""))
 
@@ -126,6 +211,7 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 	var name = str(data.get("name", pubkey.left(12)))
 
 	if role == "host" and pubkey != _my_pubkey:
+		var old_host = _host_pubkey
 		if _is_host:
 			var other_ts = ev.get("created_at", 0)
 			var i_should_remain = _host_since > 0 and other_ts > 0 and _host_since <= other_ts
@@ -142,6 +228,8 @@ func _process_discover_event(ev: Dictionary, _is_refresh: bool) -> void:
 		_update_status_bar()
 		_update_join_status()
 		_register_presence("host" if _is_host else "guest")
+		if not _is_host and _has_joined and old_host != pubkey:
+			_wh.join_host(pubkey)
 
 
 func _get_role_from_event(ev: Dictionary) -> String:
@@ -155,6 +243,8 @@ func _get_role_from_event(ev: Dictionary) -> String:
 	return str(data.get("role", ""))
 
 func _on_host_signal_received(ev: Dictionary) -> void:
+	if _is_stale_event(ev):
+		return
 	var content = str(ev.get("content", ""))
 	var pubkey = str(ev.get("pubkey", ""))
 	var j = JSON.new()
@@ -166,6 +256,7 @@ func _on_host_signal_received(ev: Dictionary) -> void:
 	var t = str(data.get("type", ""))
 	if t == "host_announce" and pubkey != _my_pubkey:
 		print("ChatManager: host_signal host_announce from ", pubkey.left(12))
+		var old_host = _host_pubkey
 		if _is_host:
 			var other_ts = ev.get("created_at", 0)
 			var i_should_remain = _host_since > 0 and other_ts > 0 and _host_since <= other_ts
@@ -182,8 +273,11 @@ func _on_host_signal_received(ev: Dictionary) -> void:
 		_update_status_bar()
 		_update_join_status()
 		_register_presence("host" if _is_host else "guest")
-		if not _is_host and not _has_joined:
-			_auto_join()
+		if not _is_host:
+			if not _has_joined:
+				_auto_join()
+			elif old_host != pubkey:
+				_wh.join_host(pubkey)
 
 
 
@@ -210,6 +304,7 @@ func _auto_join() -> void:
 	send_btn.disabled = false
 	join_btn.text = "参加"
 	_update_join_status()
+	call_deferred("_focus_input")
 
 
 func _on_overlay_close_pressed() -> void:
@@ -308,6 +403,7 @@ func _become_guest() -> void:
 	NostrGD.SendCustomEvent(0, JSON.new().stringify(content_dict), tags)
 
 	_wh.join_host(_host_pubkey)
+	_guest_connect_timer.start()
 	_add_system_message("ホストに参加リクエストを送信しました")
 	_update_status_bar()
 	_update_join_status()
@@ -315,6 +411,8 @@ func _become_guest() -> void:
 
 func _on_data_channel_opened(_dc, peer_pubkey: String) -> void:
 	print("ChatManager: DC opened with ", peer_pubkey.left(12))
+	if _guest_connect_timer:
+		_guest_connect_timer.stop()
 	if _discover_timer:
 		_discover_timer.stop()
 	if _is_host and not _join_order.has(peer_pubkey):
@@ -335,6 +433,11 @@ func _on_data_channel_closed(peer_pubkey: String) -> void:
 	_update_status_bar()
 	_update_join_status()
 
+
+func _on_guest_connect_timeout() -> void:
+	if not _is_host and _has_joined and _wh.get_connected_peers().is_empty():
+		print("ChatManager: Guest connect timeout, promoting to host")
+		_promote_to_host()
 
 func _handle_host_disconnected() -> void:
 	_add_system_message("ホスト切断。昇格処理中...")
@@ -434,31 +537,46 @@ func _add_chat_message(name: String, content: String, pubkey: String, timestamp:
 	if pubkey == _host_pubkey:
 		color = Color(1.0, 0.8, 0.2)
 
+	var margin := MarginContainer.new()
+	var m := 16 if _is_mobile else 24
+	margin.add_theme_constant_override("margin_left", m)
+	margin.add_theme_constant_override("margin_right", m)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	timeline.add_child(margin)
+
 	var panel := PanelContainer.new()
+	var vbox := VBoxContainer.new()
+	panel.add_child(vbox)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_child(panel)
+
 	var hbox := HBoxContainer.new()
-	panel.add_child(hbox)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
-	hbox.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(hbox)
 
 	var name_label := Label.new()
 	name_label.text = name
-	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.add_theme_font_size_override("font_size", 12 if _is_mobile else 10)
 	name_label.add_theme_color_override("font_color", color)
-	name_label.custom_minimum_size = Vector2(100, 0)
+	name_label.custom_minimum_size = Vector2(60 if _is_mobile else 70, 0)
 	hbox.add_child(name_label)
-
-	var msg_label := Label.new()
-	msg_label.text = content
-	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg_label.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
-	hbox.add_child(msg_label)
 
 	var time_label := Label.new()
 	var dt := Time.get_datetime_dict_from_unix_time(timestamp)
 	time_label.text = "%02d:%02d" % [dt.hour, dt.minute]
-	time_label.add_theme_font_size_override("font_size", 10)
+	time_label.add_theme_font_size_override("font_size", 8)
 	time_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	hbox.add_child(time_label)
+
+	var msg_label := Label.new()
+	msg_label.text = content
+	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	msg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if _is_mobile:
+		msg_label.add_theme_font_size_override("font_size", 12)
+	vbox.add_child(msg_label)
 
 	timeline.add_child(panel)
 	_scroll_to_bottom()
@@ -468,7 +586,7 @@ func _add_system_message(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_font_size_override("font_size", 10 if _is_mobile else 9)
 	label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	label.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_FILL
 	timeline.add_child(label)
@@ -515,4 +633,9 @@ func _update_status_bar() -> void:
 		role_text = "未参加"
 	var peer_count = _wh.get_connected_peers().size()
 	status_label2.text = role_text + " | 接続: " + str(peer_count)
-	host_label.text = "" if _host_pubkey.is_empty() else "host: " + _host_pubkey.left(12)
+	status_label2.add_theme_font_size_override("font_size", 9 if _is_mobile else 10)
+	if _is_mobile:
+		host_label.visible = false
+	else:
+		host_label.visible = true
+		host_label.text = "" if _host_pubkey.is_empty() else "host: " + _host_pubkey.left(12)

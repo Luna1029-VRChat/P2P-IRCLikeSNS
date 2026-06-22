@@ -24,7 +24,7 @@ anchor_bottom = 1.0
 layout_mode = 2
 
 [node name="TopBar" type="PanelContainer" parent="ChatPanel/VBox" unique_id=557382303]
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 
 [node name="TopHBox" type="HBoxContainer" parent="ChatPanel/VBox/TopBar" unique_id=1298846763]
@@ -34,17 +34,17 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.5, 0.5, 0.5, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 10
 
 [node name="HostLabel" type="Label" parent="ChatPanel/VBox/TopBar/TopHBox" unique_id=439034674]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 9
 
 [node name="ShowJoinBtn" type="Button" parent="ChatPanel/VBox/TopBar/TopHBox" unique_id=411596417]
 visible = false
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 10
 text = "参加"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="ChatPanel/VBox" unique_id=146080380]
@@ -54,24 +54,24 @@ size_flags_vertical = 3
 [node name="Timeline" type="VBoxContainer" parent="ChatPanel/VBox/ScrollContainer" unique_id=1263213690]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 4
+theme_override_constants/separation = 3
 
 [node name="InputArea" type="PanelContainer" parent="ChatPanel/VBox" unique_id=1619539968]
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 
 [node name="InputHBox" type="HBoxContainer" parent="ChatPanel/VBox/InputArea" unique_id=355866682]
 layout_mode = 2
 
 [node name="MessageInput" type="LineEdit" parent="ChatPanel/VBox/InputArea/InputHBox" unique_id=1937968308]
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "メッセージを入力..."
 editable = false
 
 [node name="SendBtn" type="Button" parent="ChatPanel/VBox/InputArea/InputHBox" unique_id=1044388182]
-custom_minimum_size = Vector2(80, 36)
+custom_minimum_size = Vector2(60, 28)
 layout_mode = 2
 disabled = true
 text = "送信"
@@ -79,7 +79,7 @@ text = "送信"
 [node name="ListeningHint" type="Label" parent="ChatPanel/VBox/InputArea/InputHBox" unique_id=691034191]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.5, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 9
 text = "（名前を入力して参加すると会話できます）"
 
 [node name="JoinOverlay" type="ColorRect" parent="." unique_id=471369016]
@@ -93,8 +93,8 @@ color = Color(0, 0, 0, 0.7)
 layout_mode = 0
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -40.0
-offset_bottom = 36.0
+offset_left = -32.0
+offset_bottom = 28.0
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 flat = true
 
@@ -104,26 +104,26 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -160.0
-offset_top = -60.0
-offset_right = 160.0
-offset_bottom = 60.0
-theme_override_constants/separation = 8
+offset_left = -120.0
+offset_top = -48.0
+offset_right = 120.0
+offset_bottom = 48.0
+theme_override_constants/separation = 6
 alignment = 1
 
 [node name="Title" type="Label" parent="JoinArea" unique_id=1014548109]
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 16
 text = "P2P IRC"
 horizontal_alignment = 1
 
 [node name="NameInput" type="LineEdit" parent="JoinArea" unique_id=245337027]
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 placeholder_text = "表示名"
 
 [node name="JoinBtn" type="Button" parent="JoinArea" unique_id=53963251]
-custom_minimum_size = Vector2(0, 40)
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 text = "参加"
 

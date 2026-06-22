@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="P2P-IRCLikeSNS"
+config/version="0.0.2"
 run/main_scene="res://ChatScene.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/show_image=false
@@ -41,7 +42,7 @@ theme/custom_font="uid://bonkdea70ejn0"
 
 [native_extensions]
 
-paths=PackedStringArray("res://addons/nostr_godot/gdextension/nostr_crypto.gdextension")
+paths=PackedStringArray("res://addons/nostr_godot/gdextension/nostr_crypto.gdextension", "res://addons/webrtc-native/webrtc.gdextension")
 
 [physics]
 
